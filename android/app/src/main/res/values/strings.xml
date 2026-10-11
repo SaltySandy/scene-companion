@@ -13,8 +13,8 @@
     <string name="mic_label">Send microphone to laptop</string>
     <string name="listen_off">Listen</string>
     <string name="listen_on">Listening</string>
-    <string name="mic_cd">Listen. Microphone streaming, off by default. Turn on to send your voice to the laptop.</string>
-    <string name="mic_on_cd">Listening. Microphone streaming is on. Turn off to stop sending your voice to the laptop.</string>
+    <string name="mic_cd">Listen. Microphone streaming is off. Turn on to send your voice to the laptop, then say what is in front of me.</string>
+    <string name="mic_on_cd">Listening. Microphone streaming is on by default. Turn off to stop sending your voice to the laptop. Say what is in front of me.</string>
     <string name="hint_usb">USB is most reliable: adb reverse tcp:8765 tcp:8765, then use 127.0.0.1:8765.</string>
     <string name="camera_required">Camera permission is required.</string>
     <string name="notif_channel">Camera stream</string>

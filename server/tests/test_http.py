@@ -95,6 +95,7 @@ async def test_audio_log_records_that_the_phone_spoke() -> None:
         async with websockets.connect(f"ws://127.0.0.1:{port}/v1/stream") as ws:
             first = proto.decode_json(await asyncio.wait_for(ws.recv(), timeout=2))
             assert first["type"] == "hello_ack"
+            assert first["listen_default"] is True
             async with httpx.AsyncClient() as client:
                 posted = await client.post(f"{origin}/say", json={"text": "curb in two steps"})
                 assert posted.status_code == 200

@@ -12,7 +12,13 @@ Flow for one question
    and the phone speaks a follow-up ("More about it: ...").
 
 Wall alerts stay in charge: they are sent with ``urgent=True`` and cut off any
-answer that is being read out.
+answer that is being read out. Answers are never urgent.
+
+Voice "what's in front of me" (see ``server/voice_intent.py``) uses this same
+path with ``ack=True``: a short spoken "Looking.", a ~6 s describe timeout, and
+a cooldown so Whisper duplicates do not re-fire. Prefer the fast vision model
+(``gemini-3.5-flash-lite``). Nimble still runs only when Gemini returns a
+search query, same as typed "What is this?".
 
 Environment variables
 ---------------------
@@ -21,6 +27,8 @@ NIMBLE_API_KEY              optional; without it you get step 2 only
 SAW_GEMINI_VISION_MODEL     default ``gemini-3.5-flash-lite`` (fast). ``gemini-3.8-flash`` is smarter.
 SAW_NIMBLE_MAX_RESULTS      default 5
 SAW_ASSISTANT               "0" to turn voice questions off
+SAW_DESCRIBE_TIMEOUT_S      default 6 — spoken fallback if Gemini is slower
+SAW_DESCRIBE_COOLDOWN_S     default 2.5 — drop repeated describe-scene triggers
 """
 
 from __future__ import annotations
@@ -81,6 +89,13 @@ class Description:
 SpeakFn = Callable[[str, bool], Awaitable[None]]
 FrameFn = Callable[[], "tuple[bytes, int] | None"]
 StatusFn = Callable[[dict], Awaitable[None]]
+
+LOOKING_ACK = "Looking."
+UNAVAILABLE = "Description isn't available right now."
+TIMEOUT_FALLBACK = "I couldn't describe that in time."
+NO_FRAME = "I can't see anything yet. Press Start so the camera is on."
+DEFAULT_TIMEOUT_S = 6.0
+DEFAULT_COOLDOWN_S = 2.5
 
 
 def _env_int(name: str, default: int) -> int:
@@ -197,27 +212,67 @@ async def summarize(question: str, answer: str, results: list[dict]) -> str:
 # ---------------------------------------------------------------------------
 
 
+def _env_float(name: str, default: float) -> float:
+    try:
+        return float(os.environ.get(name, default))
+    except ValueError:
+        return default
+
+
 class SceneAssistant:
     def __init__(self) -> None:
         has_key = bool(os.environ.get("GEMINI_API_KEY") or os.environ.get("GOOGLE_API_KEY"))
         self.enabled = has_key and os.environ.get("SAW_ASSISTANT", "1").strip().lower() not in {"0", "false", "off", "no"}
         self.nimble_enabled = bool(os.environ.get("NIMBLE_API_KEY", "").strip())
+        self.timeout_s = _env_float("SAW_DESCRIBE_TIMEOUT_S", DEFAULT_TIMEOUT_S)
+        self.cooldown_s = _env_float("SAW_DESCRIBE_COOLDOWN_S", DEFAULT_COOLDOWN_S)
         self._speak: SpeakFn | None = None
         self._frame: FrameFn | None = None
         self._status: StatusFn | None = None
         self._task: asyncio.Task | None = None
+        self._last_trigger = 0.0
 
     def bind(self, speak: SpeakFn, frame: FrameFn, status: StatusFn | None = None) -> None:
         self._speak, self._frame, self._status = speak, frame, status
 
-    def ask(self, question: str) -> asyncio.Task | None:
-        """Start answering. A newer question cancels an older one still running."""
+    def reset_triggers(self) -> None:
+        """Test helper: drop cooldown and cancel an in-flight answer."""
+        self._last_trigger = 0.0
+        if self._task and not self._task.done():
+            self._task.cancel()
+        self._task = None
+
+    def _in_cooldown(self) -> bool:
+        return (time.monotonic() - self._last_trigger) < self.cooldown_s
+
+    def ask(self, question: str, *, ack: bool = False, timeout_s: float | None = None) -> asyncio.Task | None:
+        """Start answering. A newer question cancels an older one still running.
+
+        ``ack=True`` is the voice "what's in front of me" path: spoken Looking.,
+        cooldown, timeout, and a spoken fallback when the assistant is off.
+        """
         question = (question or "").strip()
-        if not question or not self.enabled:
+        if not question:
+            return None
+        if ack and self._in_cooldown():
+            log.info("describe-scene skipped (cooldown)")
+            return None
+        if ack:
+            self._last_trigger = time.monotonic()
+        if not self.enabled:
+            if ack:
+                if self._task and not self._task.done():
+                    self._task.cancel()
+                self._task = asyncio.create_task(self._say(UNAVAILABLE), name="saw-assistant")
+                return self._task
             return None
         if self._task and not self._task.done():
             self._task.cancel()
-        self._task = asyncio.create_task(self._answer(question), name="saw-assistant")
+        limit = self.timeout_s if timeout_s is None else timeout_s
+        self._task = asyncio.create_task(
+            self._answer(question, ack=ack, timeout_s=limit),
+            name="saw-assistant",
+        )
         return self._task
 
     async def _say(self, text: str) -> None:
@@ -231,18 +286,28 @@ class SceneAssistant:
             except Exception:
                 log.debug("assistant status failed", exc_info=True)
 
-    async def _answer(self, question: str) -> None:
+    async def _answer(self, question: str, *, ack: bool = False, timeout_s: float = DEFAULT_TIMEOUT_S) -> None:
         t0 = time.monotonic()
         frame = self._frame() if self._frame else None
         if frame is None:
-            await self._say("I can't see anything yet. Press Start so the camera is on.")
+            await self._say(NO_FRAME)
             return
         jpeg, _ts = frame
+        if ack:
+            await self._say(LOOKING_ACK)
         await self._emit(stage="looking", question=question)
         try:
-            desc = await describe(question, jpeg)
+            if timeout_s and timeout_s > 0:
+                desc = await asyncio.wait_for(describe(question, jpeg), timeout=timeout_s)
+            else:
+                desc = await describe(question, jpeg)
         except asyncio.CancelledError:
             raise
+        except asyncio.TimeoutError:
+            log.warning("Gemini describe timed out after %.1fs", timeout_s)
+            await self._emit(stage="error", question=question, error="timeout")
+            await self._say(TIMEOUT_FALLBACK)
+            return
         except Exception as exc:
             log.warning("Gemini describe failed: %s", exc)
             await self._emit(stage="error", question=question, error=str(exc)[:200])

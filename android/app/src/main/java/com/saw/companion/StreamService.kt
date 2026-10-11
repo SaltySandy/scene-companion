@@ -61,6 +61,10 @@ class StreamService : LifecycleService() {
             override fun onProximity(p: Protocol.Proximity) {
                 cuePolicy.onProximity(p, SystemClock.elapsedRealtime())
             }
+
+            override fun onListenDefault(enabled: Boolean) {
+                applyListenDefault(enabled)
+            }
         })
         client = streamClient
         speech.onSpeakingChanged = { active -> streamClient.sendSpeaking(active) }
@@ -74,7 +78,18 @@ class StreamService : LifecycleService() {
         }
     }
 
-    fun setListening(enabled: Boolean) {
+    private var listenOverridden = false
+
+    fun applyListenDefault(enabled: Boolean) {
+        if (listenOverridden || prefs.micUserSet) return
+        setListening(enabled, userInitiated = false)
+    }
+
+    fun setListening(enabled: Boolean, userInitiated: Boolean = false) {
+        if (userInitiated) {
+            listenOverridden = true
+            prefs.micUserSet = true
+        }
         prefs.micEnabled = enabled
         val streamClient = client
         if (enabled && mic == null && streamClient != null) {
@@ -85,6 +100,12 @@ class StreamService : LifecycleService() {
         }
         if (running) {
             startInForeground()
+            sendBroadcast(
+                Intent(ACTION_STATUS)
+                    .setPackage(packageName)
+                    .putExtra(EXTRA_STATUS, lastSpoken)
+                    .putExtra(EXTRA_RUNNING, true),
+            )
         }
     }
 
