@@ -1,6 +1,6 @@
 {
-  "generated_at": "2026-10-11T19:22:11Z",
-  "mode": "websocket-url",
+  "generated_at": "2026-10-11T19:51:55Z",
+  "mode": "websocket",
   "navigator": "baseline",
   "note": "AI-generated synthetic test scenes (not real photos). Same room throughout: 4 black stackable chairs, folding table, gray door with red EXIT sign. 640x480 versions match the phone stream (JPEG q70).",
   "scenes": [
@@ -90,7 +90,9 @@
         "ref": "Exit ahead slightly right. Chair ahead on your right, keep left of it."
       },
       "spoken": "Exit to your right. Chair ahead, keep to the side.",
-      "hook_says": [],
+      "hook_says": [
+        "Exit to your right. Chair ahead, keep to the side."
+      ],
       "proximity": {
         "available": true,
         "state": "unknown",
@@ -188,7 +190,9 @@
         "ref": "Stop. Chair directly ahead. Step right, then continue forward to the exit."
       },
       "spoken": "Stop. Chair directly ahead. Step to the side, then continue to the exit.",
-      "hook_says": [],
+      "hook_says": [
+        "Stop. Chair directly ahead. Step to the side, then continue to the exit."
+      ],
       "proximity": {
         "available": true,
         "state": "unknown",
@@ -268,7 +272,9 @@
         "ref": "Exit is to your right. Turn right."
       },
       "spoken": "Exit to your right.",
-      "hook_says": [],
+      "hook_says": [
+        "Exit to your right."
+      ],
       "proximity": {
         "available": true,
         "state": "unknown",
@@ -359,7 +365,9 @@
         "ref": "You have reached the exit door. Handle on the right."
       },
       "spoken": "You have reached the exit door. Handle on the right.",
-      "hook_says": [],
+      "hook_says": [
+        "You have reached the exit door. Handle on the right."
+      ],
       "proximity": {
         "available": true,
         "state": "unknown",
@@ -457,7 +465,9 @@
         "ref": "Exit ahead slightly right. Chair ahead on your right, keep left of it."
       },
       "spoken": "Stop. Chair directly ahead. Step to the side, then continue to the exit.",
-      "hook_says": [],
+      "hook_says": [
+        "Stop. Chair directly ahead. Step to the side, then continue to the exit."
+      ],
       "proximity": {
         "available": true,
         "state": "unknown",
@@ -540,7 +550,9 @@
         "ref": "Stop. Wall directly ahead."
       },
       "spoken": "Stop. Wall directly ahead.",
-      "hook_says": [],
+      "hook_says": [
+        "Stop. Wall directly ahead."
+      ],
       "proximity": {
         "available": true,
         "state": "unknown",
@@ -625,7 +637,9 @@
         "ref": "Chair close on your right. Exit ahead."
       },
       "spoken": "Exit ahead. Chair ahead, keep to the side.",
-      "hook_says": [],
+      "hook_says": [
+        "Exit ahead. Chair ahead, keep to the side."
+      ],
       "proximity": {
         "available": true,
         "state": "unknown",
@@ -711,7 +725,9 @@
         "ref": "Chair ahead on your left. Exit is not in view. Turn and scan for the exit sign."
       },
       "spoken": "Chair ahead. Exit is not in view. Turn and scan for the exit sign.",
-      "hook_says": [],
+      "hook_says": [
+        "Chair ahead. Exit is not in view. Turn and scan for the exit sign."
+      ],
       "proximity": {
         "available": true,
         "state": "unknown",
@@ -830,7 +846,9 @@
           "ref": "Exit ahead slightly right. Chair ahead on your right, keep left of it."
         },
         "spoken": "Exit to your right. Chair ahead, keep to the side.",
-        "hook_says": [],
+        "hook_says": [
+          "Exit to your right. Chair ahead, keep to the side."
+        ],
         "proximity": {
           "available": true,
           "state": "unknown",
@@ -928,7 +946,9 @@
           "ref": "Stop. Chair directly ahead. Step right, then continue forward to the exit."
         },
         "spoken": "Stop. Chair directly ahead. Step to the side, then continue to the exit.",
-        "hook_says": [],
+        "hook_says": [
+          "Stop. Chair directly ahead. Step to the side, then continue to the exit."
+        ],
         "proximity": {
           "available": true,
           "state": "unknown",
@@ -1019,7 +1039,9 @@
           "ref": "You have reached the exit door. Handle on the right."
         },
         "spoken": "You have reached the exit door. Handle on the right.",
-        "hook_says": [],
+        "hook_says": [
+          "You have reached the exit door. Handle on the right."
+        ],
         "proximity": {
           "available": true,
           "state": "unknown",
@@ -1039,6 +1061,6 @@
       "score": 1.0
     }
   },
-  "url": "http://127.0.0.1:18780",
-  "table": "scene                         vis bear dist obst near stop  arr  utt  nav prox\n------------------------------------------------------------------------------\n01_entry_overview               Y    Y    Y    Y    Y    Y    Y    Y 100%    .\n02_chair_blocking               Y    Y    .    Y    Y    Y    Y  0.7  83%    .\n03_exit_at_right_edge           .    Y    Y    Y    .    Y    Y    Y  75%    .\n04_arrived_at_exit              Y    Y    Y    Y    Y    Y    Y    Y 100%    .\n05_low_light                    Y    Y    .    Y    .    .    Y  0.5  56%    .\n06_plain_wall_close             Y    Y    Y    Y    Y    Y    Y    Y 100%    .\n07_motion_blur_partial_chair    .    Y    .    Y    Y    Y    Y    Y  75%    .\n08_exit_not_visible             Y    .    Y    Y    Y    Y    Y    Y  88%    .\n------------------------------------------------------------------------------\nfield avg / overall           0.8  0.9  0.6    Y  0.8  0.9    Y  0.9  85%   0%\n\nOverall nav 84.6%   proximity 0%   navigator=baseline mode=websocket-url\nSequence 01_entry_overview \u2192 02_chair_blocking \u2192 04_arrived_at_exit: nav 94.5%  continuity 100%\n  01_entry_overview: 100%  say='Exit to your right. Chair ahead, keep to the side.'\n  02_chair_blocking: 83%  say='Stop. Chair directly ahead. Step to the side, then continue to the exit.'\n  04_arrived_at_exit: 100%  say='You have reached the exit door. Handle on the right.'"
+  "url": null,
+  "table": "scene                         vis bear dist obst near stop  arr  utt  nav prox\n------------------------------------------------------------------------------\n01_entry_overview               Y    Y    Y    Y    Y    Y    Y    Y 100%    .\n02_chair_blocking               Y    Y    .    Y    Y    Y    Y  0.7  83%    .\n03_exit_at_right_edge           .    Y    Y    Y    .    Y    Y    Y  75%    .\n04_arrived_at_exit              Y    Y    Y    Y    Y    Y    Y    Y 100%    .\n05_low_light                    Y    Y    .    Y    .    .    Y  0.5  56%    .\n06_plain_wall_close             Y    Y    Y    Y    Y    Y    Y    Y 100%    .\n07_motion_blur_partial_chair    .    Y    .    Y    Y    Y    Y    Y  75%    .\n08_exit_not_visible             Y    .    Y    Y    Y    Y    Y    Y  88%    .\n------------------------------------------------------------------------------\nfield avg / overall           0.8  0.9  0.6    Y  0.8  0.9    Y  0.9  85%   0%\n\nOverall nav 84.6%   proximity 0%   navigator=baseline mode=websocket\nSequence 01_entry_overview \u2192 02_chair_blocking \u2192 04_arrived_at_exit: nav 94.5%  continuity 100%\n  01_entry_overview: 100%  say='Exit to your right. Chair ahead, keep to the side.'\n  02_chair_blocking: 83%  say='Stop. Chair directly ahead. Step to the side, then continue to the exit.'\n  04_arrived_at_exit: 100%  say='You have reached the exit door. Handle on the right.'"
 }

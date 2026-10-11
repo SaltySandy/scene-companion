@@ -1,5 +1,5 @@
 {
-  "generated_at": "2026-10-11T19:21:14Z",
+  "generated_at": "2026-10-11T19:51:47Z",
   "mode": "inprocess",
   "navigator": "baseline",
   "note": "AI-generated synthetic test scenes (not real photos). Same room throughout: 4 black stackable chairs, folding table, gray door with red EXIT sign. 640x480 versions match the phone stream (JPEG q70).",
@@ -91,7 +91,15 @@
       },
       "spoken": "Exit to your right. Chair ahead, keep to the side.",
       "hook_says": [],
-      "proximity": null
+      "proximity": {
+        "available": true,
+        "state": "unknown",
+        "level": null,
+        "expected": "clear",
+        "ok": false,
+        "score": 0.0,
+        "reason": "proximity unknown or missing level (depth model not loaded?)"
+      }
     },
     {
       "id": "02_chair_blocking",
@@ -181,7 +189,15 @@
       },
       "spoken": "Stop. Chair directly ahead. Step to the side, then continue to the exit.",
       "hook_says": [],
-      "proximity": null
+      "proximity": {
+        "available": true,
+        "state": "unknown",
+        "level": null,
+        "expected": "danger",
+        "ok": false,
+        "score": 0.0,
+        "reason": "proximity unknown or missing level (depth model not loaded?)"
+      }
     },
     {
       "id": "03_exit_at_right_edge",
@@ -253,7 +269,15 @@
       },
       "spoken": "Exit to your right.",
       "hook_says": [],
-      "proximity": null
+      "proximity": {
+        "available": true,
+        "state": "unknown",
+        "level": null,
+        "expected": "clear",
+        "ok": false,
+        "score": 0.0,
+        "reason": "proximity unknown or missing level (depth model not loaded?)"
+      }
     },
     {
       "id": "04_arrived_at_exit",
@@ -336,7 +360,15 @@
       },
       "spoken": "You have reached the exit door. Handle on the right.",
       "hook_says": [],
-      "proximity": null
+      "proximity": {
+        "available": true,
+        "state": "unknown",
+        "level": null,
+        "expected": "near",
+        "ok": false,
+        "score": 0.0,
+        "reason": "proximity unknown or missing level (depth model not loaded?)"
+      }
     },
     {
       "id": "05_low_light",
@@ -426,7 +458,15 @@
       },
       "spoken": "Stop. Chair directly ahead. Step to the side, then continue to the exit.",
       "hook_says": [],
-      "proximity": null
+      "proximity": {
+        "available": true,
+        "state": "unknown",
+        "level": null,
+        "expected": "clear",
+        "ok": false,
+        "score": 0.0,
+        "reason": "proximity unknown or missing level (depth model not loaded?)"
+      }
     },
     {
       "id": "06_plain_wall_close",
@@ -501,7 +541,15 @@
       },
       "spoken": "Stop. Wall directly ahead.",
       "hook_says": [],
-      "proximity": null
+      "proximity": {
+        "available": true,
+        "state": "unknown",
+        "level": null,
+        "expected": "danger",
+        "ok": false,
+        "score": 0.0,
+        "reason": "proximity unknown or missing level (depth model not loaded?)"
+      }
     },
     {
       "id": "07_motion_blur_partial_chair",
@@ -578,7 +626,15 @@
       },
       "spoken": "Exit ahead. Chair ahead, keep to the side.",
       "hook_says": [],
-      "proximity": null
+      "proximity": {
+        "available": true,
+        "state": "unknown",
+        "level": null,
+        "expected": "near",
+        "ok": false,
+        "score": 0.0,
+        "reason": "proximity unknown or missing level (depth model not loaded?)"
+      }
     },
     {
       "id": "08_exit_not_visible",
@@ -656,7 +712,15 @@
       },
       "spoken": "Chair ahead. Exit is not in view. Turn and scan for the exit sign.",
       "hook_says": [],
-      "proximity": null
+      "proximity": {
+        "available": true,
+        "state": "unknown",
+        "level": null,
+        "expected": "near",
+        "ok": false,
+        "score": 0.0,
+        "reason": "proximity unknown or missing level (depth model not loaded?)"
+      }
     }
   ],
   "field_averages": {
@@ -670,8 +734,8 @@
     "utterance": 0.8959
   },
   "overall": 0.8464,
-  "proximity_overall": null,
-  "proximity_available": false,
+  "proximity_overall": 0.0,
+  "proximity_available": true,
   "n_scenes": 8,
   "sequence": {
     "ids": [
@@ -767,7 +831,15 @@
         },
         "spoken": "Exit to your right. Chair ahead, keep to the side.",
         "hook_says": [],
-        "proximity": null
+        "proximity": {
+          "available": true,
+          "state": "unknown",
+          "level": null,
+          "expected": "clear",
+          "ok": false,
+          "score": 0.0,
+          "reason": "proximity unknown or missing level (depth model not loaded?)"
+        }
       },
       {
         "id": "02_chair_blocking",
@@ -857,7 +929,15 @@
         },
         "spoken": "Stop. Chair directly ahead. Step to the side, then continue to the exit.",
         "hook_says": [],
-        "proximity": null
+        "proximity": {
+          "available": true,
+          "state": "unknown",
+          "level": null,
+          "expected": "danger",
+          "ok": false,
+          "score": 0.0,
+          "reason": "proximity unknown or missing level (depth model not loaded?)"
+        }
       },
       {
         "id": "04_arrived_at_exit",
@@ -940,7 +1020,15 @@
         },
         "spoken": "You have reached the exit door. Handle on the right.",
         "hook_says": [],
-        "proximity": null
+        "proximity": {
+          "available": true,
+          "state": "unknown",
+          "level": null,
+          "expected": "near",
+          "ok": false,
+          "score": 0.0,
+          "reason": "proximity unknown or missing level (depth model not loaded?)"
+        }
       }
     ],
     "overall": 0.9445,
@@ -952,5 +1040,5 @@
     }
   },
   "url": null,
-  "table": "scene                         vis bear dist obst near stop  arr  utt  nav prox\n------------------------------------------------------------------------------\n01_entry_overview               Y    Y    Y    Y    Y    Y    Y    Y 100%  n/a\n02_chair_blocking               Y    Y    .    Y    Y    Y    Y  0.7  83%  n/a\n03_exit_at_right_edge           .    Y    Y    Y    .    Y    Y    Y  75%  n/a\n04_arrived_at_exit              Y    Y    Y    Y    Y    Y    Y    Y 100%  n/a\n05_low_light                    Y    Y    .    Y    .    .    Y  0.5  56%  n/a\n06_plain_wall_close             Y    Y    Y    Y    Y    Y    Y    Y 100%  n/a\n07_motion_blur_partial_chair    .    Y    .    Y    Y    Y    Y    Y  75%  n/a\n08_exit_not_visible             Y    .    Y    Y    Y    Y    Y    Y  88%  n/a\n------------------------------------------------------------------------------\nfield avg / overall           0.8  0.9  0.6    Y  0.8  0.9    Y  0.9  85%  n/a\n\nOverall nav 84.6%   proximity n/a   navigator=baseline mode=inprocess\nSequence 01_entry_overview \u2192 02_chair_blocking \u2192 04_arrived_at_exit: nav 94.5%  continuity 100%\n  01_entry_overview: 100%  say='Exit to your right. Chair ahead, keep to the side.'\n  02_chair_blocking: 83%  say='Stop. Chair directly ahead. Step to the side, then continue to the exit.'\n  04_arrived_at_exit: 100%  say='You have reached the exit door. Handle on the right.'"
+  "table": "scene                         vis bear dist obst near stop  arr  utt  nav prox\n------------------------------------------------------------------------------\n01_entry_overview               Y    Y    Y    Y    Y    Y    Y    Y 100%    .\n02_chair_blocking               Y    Y    .    Y    Y    Y    Y  0.7  83%    .\n03_exit_at_right_edge           .    Y    Y    Y    .    Y    Y    Y  75%    .\n04_arrived_at_exit              Y    Y    Y    Y    Y    Y    Y    Y 100%    .\n05_low_light                    Y    Y    .    Y    .    .    Y  0.5  56%    .\n06_plain_wall_close             Y    Y    Y    Y    Y    Y    Y    Y 100%    .\n07_motion_blur_partial_chair    .    Y    .    Y    Y    Y    Y    Y  75%    .\n08_exit_not_visible             Y    .    Y    Y    Y    Y    Y    Y  88%    .\n------------------------------------------------------------------------------\nfield avg / overall           0.8  0.9  0.6    Y  0.8  0.9    Y  0.9  85%   0%\n\nOverall nav 84.6%   proximity 0%   navigator=baseline mode=inprocess\nSequence 01_entry_overview \u2192 02_chair_blocking \u2192 04_arrived_at_exit: nav 94.5%  continuity 100%\n  01_entry_overview: 100%  say='Exit to your right. Chair ahead, keep to the side.'\n  02_chair_blocking: 83%  say='Stop. Chair directly ahead. Step to the side, then continue to the exit.'\n  04_arrived_at_exit: 100%  say='You have reached the exit door. Handle on the right.'"
 }
