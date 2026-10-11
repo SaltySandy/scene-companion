@@ -12,9 +12,7 @@ import android.hardware.camera2.params.MeteringRectangle
 import android.os.SystemClock
 import android.util.Log
 import android.util.Size
-import androidx.annotation.OptIn
 import androidx.camera.camera2.interop.Camera2Interop
-import androidx.camera.camera2.interop.ExperimentalCamera2Interop
 import androidx.camera.core.CameraSelector
 import androidx.camera.core.ImageAnalysis
 import androidx.camera.core.resolutionselector.ResolutionSelector
@@ -159,7 +157,6 @@ class CameraStreamer(
         )
     }
 
-    @OptIn(ExperimentalCamera2Interop::class)
     private fun applyAfInterop(builder: ImageAnalysis.Builder, chars: CameraCharacteristics?) {
         val extender = Camera2Interop.Extender(builder)
         extender.setCaptureRequestOption(CaptureRequest.CONTROL_MODE, CaptureRequest.CONTROL_MODE_AUTO)
