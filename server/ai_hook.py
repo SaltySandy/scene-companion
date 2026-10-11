@@ -98,10 +98,25 @@ def warmup() -> str | None:
         _cfg = ProximityConfig.from_env()
         _tracker = LevelTracker()
         _model = depth.load()
+        _warm_describe()
     except ImportError as exc:
         log.warning("proximity sensor unavailable: %s (pip install -r server/requirements-ai.txt)", exc)
         _model = None
     return getattr(_model, "name", None)
+
+
+def _warm_describe() -> None:
+    """Import the Claude SDK and build its client now (in warmup's thread).
+
+    Done lazily, the first obstacle description imported anthropic on the event
+    loop and stalled the proximity heartbeat for about a second.
+    """
+    try:
+        from server.ai import describe
+
+        describe.warmup()
+    except Exception:
+        log.debug("describe warmup skipped", exc_info=True)
 
 
 def _infer(jpeg_bytes: bytes) -> Any:

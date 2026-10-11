@@ -76,6 +76,16 @@ _client: Any = None
 _disabled_reason: str | None = None
 
 
+def warmup() -> None:
+    """Import the SDK and create the client. Blocking: call from a thread, not the event loop."""
+    global _client
+    if not ENABLED or _client is not None:
+        return
+    import anthropic
+
+    _client = anthropic.AsyncAnthropic(max_retries=0, timeout=8.0)
+
+
 def available() -> bool:
     return ENABLED and _disabled_reason is None
 
