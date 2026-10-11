@@ -21,7 +21,11 @@ async def test_fake_phone_receives_demo_say() -> None:
     from server.app import app
     from server.tests.fake_client import run_fake_client
 
+    import server.ai_hook as ai_hook
+
     reset_demo_state()
+    # ai_hook may already be imported with the default (announcements off).
+    ai_hook.ANNOUNCE_EVERY_SEC = 0.3
     config = uvicorn.Config(app, host="127.0.0.1", port=18765, log_level="warning")
     server = uvicorn.Server(config)
     task = asyncio.create_task(server.serve())

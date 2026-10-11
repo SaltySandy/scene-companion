@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import os
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -11,10 +12,10 @@ import sentry_sdk
 from fastapi import WebSocket
 
 from server import protocol as proto
-from server.ai_hook import Play, Response, Say, on_frame
+from server.ai_hook import Play, ProximityReading, Response, Say, on_frame
 from server.clock import ClockSync
 from server.event_sinks import sinks
-from server.frame_record import FrameRecord
+from server.frame_record import Decision, FrameRecord
 from server.recorder import Recorder
 
 log = logging.getLogger("saw")
@@ -24,6 +25,10 @@ log = logging.getLogger("saw")
 CLOCK_BURST = 5
 CLOCK_BURST_SEC = 0.2
 CLOCK_EVERY_SEC = 2.0
+
+# A frame older than this at send time is reported as unknown, never as a level:
+# telling the walker "clear" about where they were 1 s ago is worse than silence.
+STALE_MS = int(os.environ.get("SAW_STALE_MS") or 700)
 
 
 @dataclass(frozen=True)
@@ -245,6 +250,11 @@ class Hub:
             sentry_sdk.capture_exception()
             result = None
         infer_end = proto.now_ms()
+        reading = _reading(result)
+        decision: Decision = "none"
+        age_ms: int | None = None
+        if reading is not None:
+            decision, age_ms = await self._send_reading(frame, reading)
         try:
             await self.apply_response(result)
         except asyncio.CancelledError:
@@ -255,6 +265,8 @@ class Hub:
             result = None
         items = _response_items(result)
         texts = [str(item.text).strip() for item in items if isinstance(item, Say)]
+        if decision == "none" and items:
+            decision = "sent"  # no proximity reading, but the hook spoke
         rec = FrameRecord(
             session_id=self.recorder.session_id,
             frame_key=frame.capture_ts,
@@ -262,10 +274,10 @@ class Hub:
             recv_ts=frame.recv_ts,
             infer_start=infer_start,
             infer_end=infer_end,
-            model=None,
-            sectors_m=None,
-            level=None,
-            decision="sent" if items else "none",
+            model=reading.model if reading else None,
+            sectors_m=reading.sectors_m if reading else None,
+            level=reading.level if reading else None,
+            decision=decision,
             message=" | ".join(texts) or None,
             dropped_since_last=frame.dropped_before,
             clock_offset_ms=self.clock.offset_ms,
@@ -273,6 +285,25 @@ class Hub:
         )
         self.recorder.record(rec, frame.jpeg)
         return rec
+
+    async def _send_reading(self, frame: PendingFrame, reading: ProximityReading) -> tuple[Decision, int | None]:
+        """Heartbeat for one frame, with the staleness gate. Returns (decision, age_ms)."""
+        now = proto.now_ms()
+        capture_laptop = self.clock.to_laptop(frame.capture_ts)
+        age_ms = now - capture_laptop if capture_laptop is not None else None
+        # Unsynced: time since receipt is a lower bound on the true age.
+        gate_age = age_ms if age_ms is not None else now - frame.recv_ts
+        key = frame.capture_ts
+        if reading.state != proto.PROXIMITY_OK:
+            await self.send_proximity(proto.PROXIMITY_UNKNOWN, frame_key=key, age_ms=age_ms)
+            return "none", age_ms
+        if gate_age > STALE_MS:
+            await self.send_proximity(proto.PROXIMITY_UNKNOWN, frame_key=key, age_ms=age_ms)
+            return "stale", age_ms
+        await self.send_proximity(
+            proto.PROXIMITY_OK, reading.level, reading.levels, reading.sectors_m, key, age_ms
+        )
+        return ("suppressed" if reading.raw_level != reading.level else "sent"), age_ms
 
     async def clock_loop(self) -> None:
         """Ping the phone with the laptop clock; app.py feeds pongs to self.clock."""
@@ -298,11 +329,21 @@ class Hub:
             self.clock_task = asyncio.create_task(self.clock_loop(), name="saw-clock")
 
 
-def _response_items(response: Response) -> list[Say | Play]:
-    """Flatten a hook response to the items say()/play() would actually send."""
+def _flatten(response: Response) -> list:
     if response is None:
         return []
-    items = [response] if isinstance(response, (Say, Play)) else list(response)
+    if isinstance(response, (Say, Play, ProximityReading)):
+        return [response]
+    return list(response)
+
+
+def _reading(response: Response) -> ProximityReading | None:
+    return next((i for i in _flatten(response) if isinstance(i, ProximityReading)), None)
+
+
+def _response_items(response: Response) -> list[Say | Play]:
+    """Flatten a hook response to the items say()/play() would actually send."""
+    items = _flatten(response)
     return [
         item
         for item in items

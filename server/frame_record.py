@@ -6,8 +6,10 @@ import json
 from dataclasses import asdict, dataclass, fields
 from typing import Any, Literal
 
-# sent: a cue went to the phone. suppressed: same level as last cue (commit 9).
-# stale: frame too old to act on (commit 9). none: nothing to say.
+# sent: a proximity level went to the phone (or, with no reading, the hook spoke).
+# suppressed: sent, but hysteresis held a higher level than this frame's raw one.
+# stale: frame too old at send time; "unknown" went out instead of a level.
+# none: no reading, or the sensor could not vouch (model missing or failed).
 Decision = Literal["sent", "suppressed", "stale", "none"]
 
 

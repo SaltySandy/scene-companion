@@ -95,3 +95,34 @@ def analyze(depth: np.ndarray, cfg: ProximityConfig | None = None) -> Proximity:
     sectors = sector_distances(depth, cfg)
     levels = {name: level_for(d, cfg) for name, d in sectors.items()}
     return Proximity(sectors_m=sectors, levels=levels, level=overall(levels))
+
+
+class LevelTracker:
+    """Per-sector hysteresis: escalate at once, de-escalate after `hold` calmer frames.
+
+    A warning is never delayed. Dropping back (danger -> near -> clear) waits
+    for `hold` consecutive frames at the calmer level, so a reading that
+    hovers at a threshold does not make the cue flicker.
+    """
+
+    def __init__(self, hold: int = 2) -> None:
+        self.hold = hold
+        self._held: dict[str, Level] = {}
+        self._calmer: dict[str, int] = {}
+
+    def reset(self) -> None:
+        self._held.clear()
+        self._calmer.clear()
+
+    def update(self, raw: dict[str, Level]) -> dict[str, Level]:
+        for sector, level in raw.items():
+            held = self._held.get(sector)
+            if held is None or SEVERITY[level] >= SEVERITY[held]:
+                self._held[sector] = level
+                self._calmer[sector] = 0
+            else:
+                self._calmer[sector] = self._calmer.get(sector, 0) + 1
+                if self._calmer[sector] >= self.hold:
+                    self._held[sector] = level
+                    self._calmer[sector] = 0
+        return {s: self._held[s] for s in raw}

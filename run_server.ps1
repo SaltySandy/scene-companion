@@ -8,6 +8,7 @@ if (-not (Test-Path ".venv")) {
 }
 
 & .\.venv\Scripts\python.exe -m pip install -q -r server\requirements.txt
+& .\.venv\Scripts\python.exe -m pip install -q -r server\requirements-ai.txt
 $env:PYTHONPATH = $Root
 if (-not $env:SAW_PORT) {
     $env:SAW_PORT = "8765"

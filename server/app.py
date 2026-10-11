@@ -19,6 +19,7 @@ from sentry_sdk.integrations.fastapi import FastApiIntegration
 
 from server import protocol as proto
 from server.event_sinks import sinks
+from server import ai_hook
 from server.hub import hub, play, say
 
 log = logging.getLogger("saw")
@@ -83,6 +84,7 @@ async def lifespan(_app: FastAPI):
         format="%(asctime)s %(levelname)s %(name)s: %(message)s",
         stream=sys.stdout,
     )
+    depth_model = await asyncio.to_thread(ai_hook.warmup)
     hub.ensure_worker()
     sinks.start()
     hub.recorder.start()
@@ -99,6 +101,8 @@ async def lifespan(_app: FastAPI):
     print(f"  Say    : curl -X POST http://{ip}:{port}/say -H 'content-type: application/json' -d '{{\"text\":\"hello\"}}'")
     if hub.recorder.enabled:
         print(f"  Record : {hub.recorder.path}")
+    if ai_hook.PROXIMITY_ON:
+        print(f"  Depth  : {depth_model or 'MISSING - phone will hear sensor lost (scripts/export_depth_onnx.py)'}")
     print("=" * 60)
     print()
     yield
@@ -127,6 +131,7 @@ async def health() -> dict[str, object]:
         "phone_connected": hub.phone is not None,
         "viewers": len(hub.viewers),
         "frames_dropped": hub.frames_dropped,
+        "depth_model": ai_hook.warmup() if ai_hook.PROXIMITY_ON else None,
         "recording": hub.recorder.session_id if hub.recorder.enabled else None,
         "records_dropped": hub.recorder.records_dropped,
         "clock_offset_ms": hub.clock.offset_ms,
