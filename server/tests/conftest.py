@@ -17,15 +17,18 @@ def clean_state():
     from server.latency import book
     from server.audio_log import audio_log
     from server.proximity import engine
+    from server.trace import tracer
 
     reset_demo_state()
     hub.reset_for_tests()
     book.reset()
     engine.reset()
     audio_log.reset()
+    tracer.reset()
     yield
     reset_demo_state()
     hub.reset_for_tests()
     book.reset()
     engine.reset()
     audio_log.reset()
+    tracer.reset()

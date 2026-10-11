@@ -70,13 +70,17 @@ class StreamClient(
         setState(ConnectionState.STOPPED, "stopped")
     }
 
-    fun sendJpeg(jpeg: ByteArray, timestampMs: Long): Boolean {
+    fun sendJpeg(jpeg: ByteArray, timestampMs: Long, focus: FrameFocus? = null): Boolean {
         val ws = socketRef.get() ?: return false
         if (!connected) return false
         // OkHttp queues outgoing frames. If anything is still on the wire, drop this one.
         if (ws.queueSize() > 0) return false
         if (!sending.compareAndSet(false, true)) return false
         val ok = try {
+            // JSON sidecar first. Old servers ignore unknown types; JPEG bytes stay pure.
+            if (focus != null) {
+                ws.send(Protocol.encodeJson(Protocol.TYPE_FRAME_META, focus.toFields(timestampMs)))
+            }
             val framed = Protocol.encodeBinary(Protocol.KIND_JPEG, jpeg, timestampMs)
             ws.send(framed.toByteString())
         } catch (_: Exception) {
@@ -140,7 +144,12 @@ class StreamClient(
                 webSocket.send(
                     Protocol.encodeJson(
                         Protocol.TYPE_HELLO,
-                        mapOf("role" to "phone", "app" to "saw-android", "app_ver" to "0.1.0"),
+                        mapOf(
+                            "role" to "phone",
+                            "app" to "saw-android",
+                            "app_ver" to "0.1.0",
+                            "focus" to true,
+                        ),
                     ),
                 )
                 sendConfig(webSocket)

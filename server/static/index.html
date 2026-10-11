@@ -91,8 +91,11 @@
       <div class="card">
         <h2>Proximity</h2>
         <div class="stat"><span>Distance</span><b id="proxD">—</b></div>
+        <div class="stat"><span>AF distance</span><b id="proxAf">—</b></div>
+        <div class="stat"><span>Fused</span><b id="proxFused">—</b></div>
         <div class="stat"><span>Predicted at TTS</span><b id="proxP">—</b></div>
         <div class="stat"><span>Closing speed</span><b id="proxV">—</b></div>
+        <div class="stat"><span>Reason</span><b id="proxReason">—</b></div>
         <div class="stat"><span>Estimator CPU</span><b id="proxMs">—</b></div>
         <div class="stat"><span>Signal</span><b id="proxSig">—</b></div>
       </div>
@@ -182,8 +185,11 @@
           $("clock").textContent = obj.clock_offset_ms + " / " + (obj.clock_rtt_ms ?? "—") + " ms";
         }
         $("proxD").textContent = obj.proximity_m == null ? "—" : obj.proximity_m.toFixed(2) + " m";
+        $("proxAf").textContent = obj.af_m == null ? "—" : obj.af_m.toFixed(2) + " m";
+        $("proxFused").textContent = obj.fused_m == null ? "—" : obj.fused_m.toFixed(2) + " m";
         $("proxP").textContent = obj.predicted_m == null ? "—" : obj.predicted_m.toFixed(2) + " m";
         $("proxV").textContent = obj.closing_mps == null ? "—" : obj.closing_mps.toFixed(2) + " m/s";
+        if (obj.prox_reason) $("proxReason").textContent = obj.prox_reason;
         if (obj.prox_ms != null) $("proxMs").textContent = obj.prox_ms + " ms";
         if (obj.prox_signal) {
           $("proxSig").textContent = obj.prox_signal;
@@ -242,8 +248,11 @@
       const px = j.proximity;
       if (px) {
         $("proxD").textContent = px.last_distance_m == null ? "—" : px.last_distance_m.toFixed(2) + " m";
+        $("proxAf").textContent = px.last_af_m == null ? "—" : px.last_af_m.toFixed(2) + " m";
+        $("proxFused").textContent = px.last_fused_m == null ? "—" : px.last_fused_m.toFixed(2) + " m";
         $("proxP").textContent = px.last_predicted_m == null ? "—" : px.last_predicted_m.toFixed(2) + " m";
         $("proxV").textContent = px.last_closing_mps == null ? "—" : px.last_closing_mps.toFixed(2) + " m/s";
+        if (px.last_reason) $("proxReason").textContent = px.last_reason;
         if (px.last_process_ms != null) $("proxMs").textContent = px.last_process_ms + " ms";
         if (px.last_signal) {
           $("proxSig").textContent = px.last_signal;

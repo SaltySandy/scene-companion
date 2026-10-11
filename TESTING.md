@@ -102,7 +102,32 @@ Repeat start/stop on:
 **Pass:** Warning on that approach.  
 **Fail:** Silence, or a warning that then chatters.
 
-## 9. Viewer and APK smoke
+## 9. Two-foot plain-wall walk (AF + trace)
 
-**Pass:** Viewer still shows the live JPEG, quality picker still works while streaming, `ws://host:port` and a pasted `wss://` / `https://` tunnel URL still connect.  
+This is the field case that failed first: a well-lit, low-texture wall at ~2 ft, walking in slowly.
+
+1. Install this APK (`adb install -r …/app-debug.apk`). USB path. Low quality.
+2. Open the viewer. Confirm **AF distance**, **Fused**, and **Reason** rows are present (they may be `—` until the first frame).
+3. Stand about **2 ft (0.6 m)** from a plain painted wall. Point the rear camera at the wall. Walk toward it slowly.
+4. You must hear **stop, obstacle ahead** *before* you are a foot from the wall.
+5. Immediately open `GET /proximity_trace` (or `server/traces/session-*.jsonl`).
+
+**Pass:** A warning on the way in. Trace rows during the walk show:
+
+- `brightness` well above 20 (not `low_light`)
+- `signal` = `ok` (a featureless bright wall is a near surface, not `no_signal`)
+- `af_diopters` / `af_m` populated when AF is converged (`passive_focused` or `focused_locked`) and calibration is `approximate` or `calibrated`
+- `fused_m` tracking the nearer of image / AF and dropping through ~0.3 m
+- `closing_mps` in a walking band (not a 3+ m/s spike)
+- `decision` / `reason` = `predicted_threshold` on the warning row
+
+**Fail:** Silence the whole way in; every row `no_signal` or `image_m` null on a bright wall; `af_m` always null while `af_state` is focused; or `closing_mps` jumps to ~3.7 while you are walking.
+
+If frames go near-black (`brightness` ~4, `signal` = `low_light`), the lens is covered / face-down or AE collapsed — YuvJpeg copies the Y plane as-is and does not darken a well-lit scene.
+
+---
+
+## 10. Viewer and APK smoke
+
+**Pass:** Viewer still shows the live JPEG, quality picker still works while streaming, `ws://host:port` and a pasted `wss://` / `https://` tunnel URL still connect. AF / fused / reason update while streaming.  
 **Fail:** Blank viewer, or the address field no longer accepts a tunnel URL.

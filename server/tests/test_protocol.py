@@ -120,6 +120,29 @@ def test_audio_event_json() -> None:
     assert obj["event"] == "started"
 
 
+def test_frame_meta_json() -> None:
+    text = proto.encode_json(
+        proto.MsgType.FRAME_META,
+        ts=99,
+        sensor_ts_ns=1_000,
+        focus_distance_diopters=3.33,
+        af_state=2,
+        focus_calibration=1,
+    )
+    obj = proto.decode_json(text)
+    assert obj["type"] == "frame_meta"
+    assert obj["ts"] == 99
+    assert abs(obj["focus_distance_diopters"] - 3.33) < 1e-9
+    assert obj["af_state"] == 2
+    assert obj["focus_calibration"] == 1
+
+
+def test_jpeg_without_meta_stays_pure_bytes() -> None:
+    raw = proto.encode_binary(proto.Kind.JPEG_FRAME, MINI_JPEG, timestamp_ms=7)
+    msg = proto.decode_binary(raw)
+    assert msg.payload[:2] == b"\xff\xd8"
+
+
 def test_mime_flag_mapping() -> None:
     assert proto.mime_to_flag("audio/mpeg") == proto.AudioFlag.MP3
     assert proto.mime_to_flag("audio/wav") == proto.AudioFlag.WAV

@@ -4,13 +4,23 @@ from __future__ import annotations
 
 from server.latency import LatencyBook
 from server.proximity import (
+    AF_CAL_APPROXIMATE,
+    AF_CAL_CALIBRATED,
+    AF_CAL_UNCALIBRATED,
+    AF_STATE_FOCUSED_LOCKED,
+    AF_STATE_PASSIVE_FOCUSED,
+    AF_STATE_PASSIVE_SCAN,
+    AutofocusEstimator,
     CorridorLoomingEstimator,
     FixedEstimator,
     ProximityEngine,
+    fuse_estimates,
     mean_luminance,
 )
 from server.proximity_frames import (
     approach_sequence,
+    focus_meta_for_distance,
+    render_bright_plain,
     render_dark,
     render_empty,
     render_obstacle,
@@ -328,3 +338,183 @@ def test_pluggable_estimator(clean_state) -> None:
     engine.set_estimator(FixedEstimator(0.15))
     dec = engine.process_jpeg(b"ignored", 10, 10, now_ms=10, remaining_p95_ms=0)
     assert dec is not None and dec.should_warn is True
+
+
+def test_af_estimator_converts_diopters() -> None:
+    est = AutofocusEstimator()
+    got = est.estimate(3.33, af_state=AF_STATE_PASSIVE_FOCUSED, calibration=AF_CAL_APPROXIMATE)
+    assert got is not None and got.usable
+    assert abs(got.distance_m - 1.0 / 3.33) < 0.01
+
+
+def test_af_calibrated_is_trusted() -> None:
+    est = AutofocusEstimator()
+    got = est.estimate(5.0, af_state=AF_STATE_FOCUSED_LOCKED, calibration=AF_CAL_CALIBRATED)
+    assert got is not None and got.usable
+    assert abs(got.distance_m - 0.2) < 0.001
+    assert got.confidence >= 0.8
+
+
+def test_af_hunting_is_not_usable() -> None:
+    est = AutofocusEstimator()
+    got = est.estimate(4.0, af_state=AF_STATE_PASSIVE_SCAN, calibration=AF_CAL_APPROXIMATE)
+    assert got is not None
+    assert got.usable is False
+    assert got.signal == "af_hunting"
+
+
+def test_af_uncalibrated_is_not_usable() -> None:
+    est = AutofocusEstimator()
+    got = est.estimate(4.0, af_state=AF_STATE_PASSIVE_FOCUSED, calibration=AF_CAL_UNCALIBRATED)
+    assert got is not None
+    assert got.usable is False
+    assert got.signal == "af_uncalibrated"
+
+
+def test_af_zero_diopters_is_infinity() -> None:
+    est = AutofocusEstimator()
+    got = est.estimate(0.0, af_state=AF_STATE_PASSIVE_FOCUSED, calibration=AF_CAL_CALIBRATED)
+    assert got is not None and got.usable
+    assert got.distance_m >= 8.0
+
+
+def test_fuse_takes_nearer_usable() -> None:
+    image = CorridorLoomingEstimator().estimate(render_obstacle(1.6))
+    af = AutofocusEstimator().estimate(1.0 / 0.4, AF_STATE_PASSIVE_FOCUSED, AF_CAL_APPROXIMATE)
+    assert image and image.usable and af and af.usable
+    fused = fuse_estimates(image, af)
+    assert fused is not None and fused.usable
+    assert fused.distance_m == min(image.distance_m, af.distance_m)
+    assert fused.details.get("fused_from") in {"image", "af"}
+
+
+def test_fuse_falls_back_when_af_hunting() -> None:
+    image = CorridorLoomingEstimator().estimate(render_obstacle(0.9))
+    af = AutofocusEstimator().estimate(5.0, AF_STATE_PASSIVE_SCAN, AF_CAL_APPROXIMATE)
+    fused = fuse_estimates(image, af)
+    assert image and fused
+    assert fused.usable
+    assert fused.distance_m == image.distance_m
+    assert fused.details.get("fused_from") == "image"
+
+
+def test_fuse_falls_back_when_uncalibrated() -> None:
+    image = CorridorLoomingEstimator().estimate(render_obstacle(1.1))
+    af = AutofocusEstimator().estimate(5.0, AF_STATE_PASSIVE_FOCUSED, AF_CAL_UNCALIBRATED)
+    fused = fuse_estimates(image, af)
+    assert image and fused and fused.distance_m == image.distance_m
+
+
+def test_low_light_beats_stale_af_lock() -> None:
+    image = CorridorLoomingEstimator().estimate(render_dark(value=6))
+    af = AutofocusEstimator().estimate(1.0 / 0.25, AF_STATE_FOCUSED_LOCKED, AF_CAL_CALIBRATED)
+    fused = fuse_estimates(image, af)
+    assert image and fused
+    assert fused.signal == "low_light"
+    assert fused.usable is False
+
+
+def test_bright_plain_wall_is_likely_near_surface() -> None:
+    est = CorridorLoomingEstimator()
+    got = est.estimate(render_bright_plain(value=200))
+    assert got is not None
+    assert got.usable is True
+    assert got.signal == "ok"
+    assert got.details.get("reason") == "plain_wall"
+    assert 0.3 < got.distance_m < 0.8
+    assert got.confidence < 0.5
+
+
+def test_bright_plain_wall_is_not_no_signal() -> None:
+    est = CorridorLoomingEstimator()
+    got = est.estimate(render_bright_plain(value=230))
+    assert got is not None
+    assert got.signal != "no_signal"
+    assert got.signal != "low_light"
+
+
+def test_empty_corridor_is_still_not_a_plain_wall() -> None:
+    est = CorridorLoomingEstimator()
+    assert est.estimate(render_empty()) is None
+
+
+def test_speed_outlier_3_7_is_rejected(clean_state) -> None:
+    engine = ProximityEngine(estimator=FixedEstimator(1.0))
+    t = 10.0
+    d = 2.0
+    for _ in range(5):
+        t += 0.1
+        d -= 0.14  # 1.4 m/s walk
+        engine._update_speed(t, d)
+    assert 0.8 < engine.closing_mps < 1.9
+    t += 0.1
+    engine._update_speed(t, d - 0.37)  # 3.7 m/s spike
+    assert engine.closing_mps < 2.0
+    assert engine.closing_mps < 2.5
+
+
+def test_engine_fuses_af_on_bright_wall(clean_state) -> None:
+    engine = ProximityEngine()
+    jpeg = render_bright_plain()
+    focus = focus_meta_for_distance(0.45)
+    dec = engine.process_jpeg(jpeg, 1_000, 1_000, now_ms=1_000, remaining_p95_ms=0, focus=focus)
+    assert engine.last_af_estimate is not None and engine.last_af_estimate.usable
+    assert abs(engine.last_af_estimate.distance_m - 0.45) < 0.02
+    assert engine.last_estimate is not None and engine.last_estimate.usable
+    # nearer of image (~0.55) and AF (0.45)
+    assert engine.last_estimate.distance_m <= 0.55
+    assert dec is not None
+    snap = engine.snapshot()
+    assert snap["last_af_m"] is not None
+    assert snap["last_fused_m"] is not None
+
+
+def test_bright_wall_approach_warns_before_one_foot(clean_state) -> None:
+    engine = ProximityEngine(cooldown_ms=5_000)
+    warned_at: list[float] = []
+    t_ms = 2_000_000
+    seq = approach_sequence(start_m=0.6, end_m=0.2, speed_mps=0.45, fps=8, kind="bright_wall")
+    for frame in seq:
+        dec = engine.process_jpeg(
+            frame.jpeg,
+            capture_ts=t_ms,
+            recv_ms=t_ms + 15,
+            now_ms=t_ms + 20,
+            remaining_p95_ms=200,
+            focus=focus_meta_for_distance(frame.distance_m),
+        )
+        if dec and dec.should_warn:
+            warned_at.append(frame.distance_m)
+        t_ms += 125
+    assert warned_at, "expected a warning on a slow bright-wall approach"
+    assert warned_at[0] > 0.3
+
+
+def test_trace_row_has_expected_keys(clean_state) -> None:
+    engine = ProximityEngine()
+    dec = engine.process_jpeg(
+        render_bright_plain(),
+        50,
+        50,
+        now_ms=50,
+        remaining_p95_ms=0,
+        focus=focus_meta_for_distance(0.5),
+    )
+    row = engine.trace_row(capture_ts=50, recv_ms=50, brightness=200.0, decision=dec)
+    for key in (
+        "ts",
+        "brightness",
+        "signal",
+        "image_m",
+        "af_diopters",
+        "af_m",
+        "af_state",
+        "af_calibration",
+        "fused_m",
+        "closing_mps",
+        "predicted_m",
+        "lead_ms",
+        "decision",
+        "reason",
+    ):
+        assert key in row

@@ -331,7 +331,12 @@ async def run_simulation(
     ws = await open_socket()
     try:
         origin = time.time()
-        for i, (jpeg, dist_m, t_scene) in enumerate(seq):
+        for i, item in enumerate(seq):
+            if len(item) == 4:
+                jpeg, dist_m, t_scene, focus = item
+            else:
+                jpeg, dist_m, t_scene = item
+                focus = None
             if reconnect_after >= 0 and i == reconnect_after:
                 await ws.close()
                 ws = await open_socket()
@@ -353,6 +358,10 @@ async def run_simulation(
                 # later frames still replace it on the server (latest-only).
                 await asyncio.sleep(latest_only_hold_s)
             await asyncio.sleep(up)
+            if focus:
+                meta = dict(focus)
+                meta.setdefault("ts", capture_ts)
+                await ws.send(proto.encode_json(proto.MsgType.FRAME_META, **meta))
             await ws.send(proto.encode_binary(proto.Kind.JPEG_FRAME, jpeg, timestamp_ms=capture_ts))
             result.frames_sent += 1
             if ping and i % 4 == 0:

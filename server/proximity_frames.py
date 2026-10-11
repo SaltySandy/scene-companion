@@ -85,6 +85,15 @@ def render_white_flash(width: int = 160, height: int = 120) -> bytes:
     return buf.getvalue()
 
 
+def render_bright_plain(width: int = 160, height: int = 120, *, value: int = 200) -> bytes:
+    """Well-lit featureless wall — no edges, no dark blob."""
+    v = max(0, min(255, int(value)))
+    img = Image.new("RGB", (width, height), (v, v, v))
+    buf = io.BytesIO()
+    img.save(buf, format="JPEG", quality=90)
+    return buf.getvalue()
+
+
 def render_wall(distance_m: float, width: int = 160, height: int = 120) -> bytes:
     """A surface that fills more of the frame as you get closer."""
     fill = min(0.98, 0.6 / max(distance_m, 0.08))
@@ -119,9 +128,29 @@ def approach_sequence(
     frames: list[ApproachFrame] = []
     t = 0.0
     d = start_m
-    renderer = render_wall if kind == "wall" else render_obstacle
+    if kind == "bright_wall":
+        renderer = lambda dist, w, h: render_bright_plain(w, h)  # noqa: E731
+    elif kind == "wall":
+        renderer = render_wall
+    else:
+        renderer = render_obstacle
     while d >= end_m:
         frames.append(ApproachFrame(jpeg=renderer(d, width, height), distance_m=d, t_scene_s=t))
         t += dt
         d -= speed_mps * dt
     return frames
+
+
+def focus_meta_for_distance(
+    distance_m: float,
+    *,
+    af_state: int = 2,
+    calibration: int = 2,
+) -> dict:
+    """Camera2 sidecar for a known range. ``af_state`` 2 = PASSIVE_FOCUSED."""
+    diopters = 0.0 if distance_m <= 0 else 1.0 / max(distance_m, 0.08)
+    return {
+        "focus_distance_diopters": diopters,
+        "af_state": af_state,
+        "focus_calibration": calibration,
+    }

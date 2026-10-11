@@ -129,7 +129,7 @@ If a frame is still on the phone’s outbound WebSocket queue, the next JPEG is 
 
 Every text message is `{"v":1,"type":"..."}`.
 
-Phone → laptop: `hello`, `config` (`width`, `height`, `fps`, `quality`, `mic`), `ping` (`t0`), `sync` (`t0,t1,t2,t3`), `tts_start` (`capture_ts`, `tts_start_ts`, `say_recv_ts`, `e2e_ms`), `audio_event` (`id`, `event`, `volume`, `muted`, `error_code`).
+Phone → laptop: `hello`, `config` (`width`, `height`, `fps`, `quality`, `mic`), `ping` (`t0`), `sync` (`t0,t1,t2,t3`), `tts_start` (`capture_ts`, `tts_start_ts`, `say_recv_ts`, `e2e_ms`), `audio_event` (`id`, `event`, `volume`, `muted`, `error_code`), `frame_meta` (optional sidecar immediately before a JPEG: `ts`, `sensor_ts_ns`, `focus_distance_diopters`, `af_state`, `focus_calibration`). Old servers ignore unknown JSON types; JPEG bytes stay pure.
 
 Laptop → phone:
 
@@ -145,6 +145,7 @@ HTTP helpers (same laptop):
 - `GET /health`, `GET /`
 - `GET /latency` — rolling e2e p50/p95, stage breakdown, clock offset, flash result, proximity snapshot
 - `GET /audio_log` — last ~200 intended `say` / clip outputs and phone lifecycle (`received` → `done`)
+- `GET /proximity_trace` — last N per-frame proximity rows (`?n=80`); full session JSONL in `server/traces/`
 - `POST /flash` — arm the on-demand flash detector (`{"t": laptop_ms}` optional)
 
 ---
@@ -165,9 +166,9 @@ The viewer “Latency (stamp)” line is uplink after sync (or the old `recv - c
 
 ## Proximity warning
 
-A fast, deterministic estimator (`server/proximity.py`, default `corridor_looming`) looks at the center walking corridor: dark / high-contrast mass + pinhole size (`distance = assumed_width × focal / apparent_width`) and fill. Same JPEG → same meters. No weights are downloaded; pip-install **numpy** and **pillow** (already in `server/requirements.txt`). The estimator is a `ProximityEstimator` protocol — drop in a depth model by implementing `estimate(jpeg)` and setting `SAW_PROXIMITY_ESTIMATOR` or `engine.set_estimator(...)`. Frames are downscaled to 320 px wide before the math. Measured CPU (Pillow + numpy, no GPU): **~2.1 ms/frame at 640×480**, ~3.7 ms at 720p, ~7.5 ms at 1080p. That stays inside the ~220 ms one-foot walking budget.
+A fast, deterministic estimator (`server/proximity.py`, default `corridor_looming`) looks at the center walking corridor: dark / high-contrast mass + pinhole size (`distance = assumed_width × focal / apparent_width`) and fill. A well-lit, textureless frame is a low-confidence near surface (plain wall), not `no_signal`. Same JPEG → same meters. No weights are downloaded; pip-install **numpy** and **pillow** (already in `server/requirements.txt`). The estimator is a `ProximityEstimator` protocol — drop in a depth model by implementing `estimate(jpeg)` and setting `SAW_PROXIMITY_ESTIMATOR` or `engine.set_estimator(...)`. Frames are downscaled to 320 px wide before the math. Measured CPU (Pillow + numpy, no GPU): **~2.1 ms/frame at 640×480**, ~3.7 ms at 720p, ~7.5 ms at 1080p. That stays inside the ~220 ms one-foot walking budget.
 
-It tracks closing speed (EMA + median, reset on a >500 ms gap so a quality-switch camera rebind cannot look like a slam). It warns when
+The phone also sends Camera2 `LENS_FOCUS_DISTANCE` (diopters) plus AF state and calibration. The server trusts AF only when calibration is APPROXIMATE/CALIBRATED and AF is converged, converts `meters = 1/diopters`, and **fuses** with the image estimate by taking the nearer usable reading. Closing speed is a clamped median (cap 2.2 m/s, outlier reject) so a size-change spike cannot look like a sprint. It warns when
 
 ```
 predicted = distance - closing_speed × (frame_age + remaining_p95) / 1000
@@ -186,6 +187,8 @@ is ≤ **0.3 m** (one foot). `urgent=True` so the phone interrupts whatever was 
 | `SAW_PROXIMITY_ESTIMATOR` | `corridor_looming` | Pluggable name |
 | `SAW_DEFAULT_REMAINING_MS` | `250` | Used before enough `tts_start` samples exist |
 | `SAW_PROXIMITY_TEXT` | `stop, obstacle ahead` | Spoken warning |
+| `SAW_PROXIMITY_MAX_CLOSING_MPS` | `2.2` | Cap on derived closing speed |
+| `SAW_TRACE_JPEG_EVERY` | `10` | Save every Nth JPEG next to the session JSONL; `0` disables |
 
 The LLM / demo stub in `ai_hook.py` is unchanged and runs beside this path.
 
@@ -209,7 +212,7 @@ echo "sdk.dir=$ANDROID_HOME" > android/local.properties
 cd android && ./gradlew :app:assembleDebug
 ```
 
-The APK lands at `android/app/build/outputs/apk/debug/app-debug.apk`.
+The APK lands at `android/app/build/outputs/apk/debug/app-debug.apk`. Debug builds are signed with `android/keystore/debug.keystore` so `adb install -r` can replace the current Pixel install.
 
 ---
 

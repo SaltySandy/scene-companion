@@ -23,6 +23,7 @@ from server.audio_log import audio_log
 from server.hub import hub, play, say
 from server.latency import book as latency_book
 from server.proximity import engine as prox_engine
+from server.trace import tracer
 
 log = logging.getLogger("saw")
 STATIC_DIR = Path(__file__).resolve().parent / "static"
@@ -139,6 +140,17 @@ async def latency() -> dict[str, object]:
 @app.get("/audio_log")
 async def http_audio_log() -> dict[str, object]:
     return audio_log.snapshot()
+
+
+@app.get("/proximity_trace")
+async def http_proximity_trace(request: Request) -> dict[str, object]:
+    """Last N per-frame proximity rows for the current (or last) session."""
+    raw = request.query_params.get("n", "80")
+    try:
+        n = int(raw)
+    except (TypeError, ValueError):
+        n = 80
+    return tracer.snapshot(n)
 
 
 @app.post("/flash")
@@ -386,6 +398,8 @@ async def _handle_phone_text(_ws: WebSocket, text: str) -> None:
         log.info("phone hello: %s", obj)
     elif kind == proto.MsgType.CONFIG:
         log.info("phone config: %s", obj)
+    elif kind == proto.MsgType.FRAME_META:
+        hub.note_frame_meta(obj)
 
 
 async def _ws_safe_send_text(ws: WebSocket, text: str) -> None:

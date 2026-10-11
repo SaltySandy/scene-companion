@@ -15,7 +15,9 @@ android {
         versionName = "0.1.0"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
 
-        // Override with -PsentryDsn=... or sentryDsn= in gradle.properties.
+        // Same debug keystore for every cloud/local assembleDebug so
+        // `adb install -r` can replace the Pixel install. Debug-only.
+        val sentryPlaceholder = "sentry"
         // The Sentry Gradle plugin is intentionally not applied: it uploads
         // mappings and fails the build without an auth token.
         val sentryDsn = (project.findProperty("sentryDsn") as String?)
@@ -23,6 +25,17 @@ android {
         buildConfigField("String", "SENTRY_DSN", "\"$sentryDsn\"")
         manifestPlaceholders["sentryDsn"] = sentryDsn
         manifestPlaceholders["sentryRelease"] = "$versionName+$versionCode"
+    }
+
+    // Debug-only keystore checked into android/keystore/ so cloud builds can
+    // `adb install -r` over the Pixel install. Do not use for release.
+    signingConfigs {
+        getByName("debug") {
+            storeFile = rootProject.file("keystore/debug.keystore")
+            storePassword = "android"
+            keyAlias = "androiddebugkey"
+            keyPassword = "android"
+        }
     }
 
     buildTypes {
@@ -35,6 +48,7 @@ android {
         }
         debug {
             isMinifyEnabled = false
+            signingConfig = signingConfigs.getByName("debug")
         }
     }
 
@@ -44,6 +58,7 @@ android {
     }
     kotlinOptions {
         jvmTarget = "17"
+        freeCompilerArgs += "-opt-in=androidx.camera.camera2.interop.ExperimentalCamera2Interop"
     }
     buildFeatures {
         viewBinding = true

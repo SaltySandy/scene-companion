@@ -17,6 +17,7 @@ from server.audio_log import audio_log
 from server.latency import book as latency_book
 from server.proximity import engine as prox_engine
 from server.proximity import mean_luminance
+from server.trace import tracer
 
 log = logging.getLogger("saw")
 
@@ -26,6 +27,7 @@ class Frame:
     jpeg: bytes
     capture_ts: int
     recv_ms: int
+    focus: dict[str, Any] | None = None
 
 
 @dataclass
@@ -41,6 +43,9 @@ class Hub:
     worker_task: asyncio.Task[None] | None = None
     prox_task: asyncio.Task[None] | None = None
     last_process_ctx: dict[str, int] | None = None
+    pending_focus: dict[int, dict[str, Any]] = field(default_factory=dict)
+    last_focus: dict[str, Any] | None = None
+    last_focus_ts: int = 0
 
     async def attach_phone(self, ws: WebSocket) -> None:
         if self.phone is not None:
@@ -52,6 +57,10 @@ class Hub:
         # A new session: drop motion history so a reconnect cannot inherit speed.
         prox_engine.samples.clear()
         prox_engine.closing_mps = 0.0
+        self.pending_focus.clear()
+        self.last_focus = None
+        self.last_focus_ts = 0
+        tracer.start_session()
         log.info("phone connected")
         sinks.log_event("connect", "phone connected")
 
@@ -67,10 +76,27 @@ class Hub:
     def detach_viewer(self, ws: WebSocket) -> None:
         self.viewers.discard(ws)
 
+    def note_frame_meta(self, meta: dict[str, Any]) -> None:
+        """Sidecar JSON sent immediately before a JPEG. Matched by capture ts."""
+        try:
+            ts = int(meta.get("ts"))
+        except (TypeError, ValueError):
+            return
+        self.pending_focus[ts] = meta
+        self.last_focus = meta
+        self.last_focus_ts = ts
+        if len(self.pending_focus) > 48:
+            oldest = min(self.pending_focus)
+            self.pending_focus.pop(oldest, None)
+
     def submit_frame(self, jpeg: bytes, ts: int, recv_ms: int | None = None) -> None:
         """Keep only the latest JPEG on each path. Workers never queue a backlog."""
         recv = int(recv_ms if recv_ms is not None else proto.now_ms())
-        frame = Frame(jpeg=jpeg, capture_ts=int(ts), recv_ms=recv)
+        ts_i = int(ts)
+        focus = self.pending_focus.pop(ts_i, None)
+        if focus is None and self.last_focus is not None and abs(ts_i - self.last_focus_ts) <= 80:
+            focus = self.last_focus
+        frame = Frame(jpeg=jpeg, capture_ts=ts_i, recv_ms=recv, focus=focus)
         self.latest_frame = frame
         self.frame_event.set()
         self.latest_prox = frame
@@ -263,6 +289,9 @@ class Hub:
             closing_mps=prox["last_closing_mps"],
             prox_ms=prox["last_process_ms"],
             prox_signal=prox.get("last_signal"),
+            af_m=prox.get("last_af_m"),
+            fused_m=prox.get("last_fused_m"),
+            prox_reason=prox.get("last_reason"),
         )
 
     async def worker_loop(self) -> None:
@@ -320,6 +349,7 @@ class Hub:
                     item.recv_ms,
                     proto.now_ms(),
                     None,
+                    item.focus,
                 )
             except asyncio.CancelledError:
                 raise
@@ -329,6 +359,18 @@ class Hub:
                 continue
             process_end = proto.now_ms()
             latency_book.note_process(item.recv_ms, process_start, process_end)
+            try:
+                tracer.record(
+                    prox_engine.trace_row(
+                        capture_ts=item.capture_ts,
+                        recv_ms=item.recv_ms,
+                        brightness=luma,
+                        decision=decision,
+                    ),
+                    jpeg=item.jpeg,
+                )
+            except Exception:
+                log.exception("proximity trace failed")
             self.last_process_ctx = {
                 "recv_ms": item.recv_ms,
                 "process_start_ms": process_start,
@@ -370,9 +412,13 @@ class Hub:
             self.prox_event = asyncio.Event()
         except RuntimeError:
             pass
+        self.pending_focus.clear()
+        self.last_focus = None
+        self.last_focus_ts = 0
         prox_engine.reset()
         latency_book.reset()
         audio_log.reset()
+        tracer.reset()
 
 
 # Process-wide hub used by HTTP handlers and the hook helpers.

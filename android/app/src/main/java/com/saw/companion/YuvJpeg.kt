@@ -10,6 +10,11 @@ import androidx.camera.core.ImageProxy
 import java.io.ByteArrayOutputStream
 
 object YuvJpeg {
+    /**
+     * Copies the Y plane as-is, then NV21→JPEG. There is no brightness gain/gamma
+     * that would turn a well-lit scene black; a near-black JPEG means the sensor
+     * Y values were already near zero (covered lens, face-down, or AE after dark).
+     */
     fun toJpeg(image: ImageProxy, quality: Int): ByteArray? {
         val nv21 = yuv420ToNv21(image) ?: return null
         val yuv = YuvImage(nv21, ImageFormat.NV21, image.width, image.height, null)

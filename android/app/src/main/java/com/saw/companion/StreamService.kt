@@ -64,8 +64,8 @@ class StreamService : LifecycleService() {
         streamRef = streamClient
         client = streamClient
         streamClient.start()
-        camera = CameraStreamer(this, this, prefs) { jpeg, ts ->
-            streamClient.sendJpeg(jpeg, ts)
+        camera = CameraStreamer(this, this, prefs) { jpeg, ts, focus ->
+            streamClient.sendJpeg(jpeg, ts, focus)
         }.also { it.start() }
         if (prefs.micEnabled) {
             mic = MicStreamer { pcm, ts -> streamClient.sendMicPcm(pcm, ts) }.also { it.start() }

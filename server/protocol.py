@@ -63,6 +63,7 @@ class MsgType:
     LATENCY = "latency"
     AUDIO_EVENT = "audio_event"
     AUDIO_OUT = "audio_out"
+    FRAME_META = "frame_meta"
 
 
 @dataclass(frozen=True)

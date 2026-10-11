@@ -17,7 +17,13 @@ from server.app import app
 from server.hub import hub
 from server.latency import book
 from server.proximity import FixedEstimator, engine
-from server.proximity_frames import approach_sequence, render_obstacle, render_white_flash
+from server.proximity_frames import (
+    approach_sequence,
+    focus_meta_for_distance,
+    render_obstacle,
+    render_white_flash,
+)
+from server.trace import tracer
 from server.tests.fake_client import CELL, USB, WIFI, NetProfile, SimulatedTts, OutgoingSay, run_simulation
 
 
@@ -68,6 +74,10 @@ async def test_http_latency_and_flash_endpoints() -> None:
             assert book.flash_armed is True
             health = await client.get("http://127.0.0.1:18801/health")
             assert health.json()["ok"] is True
+            trace = await client.get("http://127.0.0.1:18801/proximity_trace")
+            assert trace.status_code == 200
+            assert trace.json()["ok"] is True
+            assert "rows" in trace.json()
     finally:
         await _stop(server, task)
 
@@ -301,6 +311,36 @@ async def test_ping_pong_roundtrip(clean_state) -> None:
         assert book.offset_ms is not None
         assert book.offset_rtt_ms is not None
         assert book.offset_rtt_ms < 200
+    finally:
+        await _stop(server, task)
+
+
+@pytest.mark.asyncio
+async def test_bright_wall_af_approach_warns_before_one_foot(clean_state) -> None:
+    server, task = await _serve(18813)
+    try:
+        for _ in range(10):
+            book.remaining.add(200)
+        seq = approach_sequence(start_m=0.6, end_m=0.2, speed_mps=0.45, fps=8, kind="bright_wall")
+        frames = [
+            (f.jpeg, f.distance_m, f.t_scene_s, focus_meta_for_distance(f.distance_m)) for f in seq
+        ]
+        profile = NetProfile("usb-wall", uplink_ms=12, downlink_ms=12, jitter_ms=0, tts_ms=20)
+        result = await run_simulation(
+            "ws://127.0.0.1:18813/v1/stream",
+            frames,
+            profile=profile,
+            wait_after_s=1.0,
+        )
+        warns = [s for s in result.says if s.get("urgent") and "obstacle" in s.get("text", "")]
+        assert warns, f"expected a proximity warning on the bright wall, got {result.says}"
+        assert result.first_warn_true_distance_m is not None
+        assert result.first_warn_true_distance_m > 0.3
+        async with httpx.AsyncClient() as client:
+            trace = (await client.get("http://127.0.0.1:18813/proximity_trace?n=40")).json()
+            assert trace["ok"] is True
+            assert trace["n"] >= 1
+            assert any(row.get("af_m") is not None for row in trace["rows"])
     finally:
         await _stop(server, task)
 
