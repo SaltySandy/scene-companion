@@ -110,6 +110,16 @@ def test_ping_pong_sync_and_tts_types() -> None:
     assert tts["type"] == "tts_start" and tts["e2e_ms"] == 10
 
 
+def test_audio_event_json() -> None:
+    text = proto.encode_json(
+        proto.MsgType.AUDIO_EVENT, id="a0001", event="started", volume=5, muted=False
+    )
+    obj = proto.decode_json(text)
+    assert obj["type"] == "audio_event"
+    assert obj["id"] == "a0001"
+    assert obj["event"] == "started"
+
+
 def test_mime_flag_mapping() -> None:
     assert proto.mime_to_flag("audio/mpeg") == proto.AudioFlag.MP3
     assert proto.mime_to_flag("audio/wav") == proto.AudioFlag.WAV

@@ -129,12 +129,12 @@ If a frame is still on the phone’s outbound WebSocket queue, the next JPEG is 
 
 Every text message is `{"v":1,"type":"..."}`.
 
-Phone → laptop: `hello`, `config` (`width`, `height`, `fps`, `quality`, `mic`), `ping` (`t0`), `sync` (`t0,t1,t2,t3`), `tts_start` (`capture_ts`, `tts_start_ts`, `say_recv_ts`, `e2e_ms`).
+Phone → laptop: `hello`, `config` (`width`, `height`, `fps`, `quality`, `mic`), `ping` (`t0`), `sync` (`t0,t1,t2,t3`), `tts_start` (`capture_ts`, `tts_start_ts`, `say_recv_ts`, `e2e_ms`), `audio_event` (`id`, `event`, `volume`, `muted`, `error_code`).
 
 Laptop → phone:
 
 - `hello_ack`
-- `say` — `{"v":1,"type":"say","text":"...","urgent":false,"capture_ts":...}` (Android TTS; lowest latency, works offline). `capture_ts` is the frame the speech is about; the phone reports TTS start against it.
+- `say` — `{"v":1,"type":"say","text":"...","urgent":false,"capture_ts":...,"id":"a0001"}` (Android TTS; lowest latency, works offline). `capture_ts` is the frame the speech is about; the phone reports TTS start against it. `id` is the audio-out row; older phones ignore it.
 - `pong` — echoes `t` / `t0` and adds laptop `t1` (recv) and `t2` (send) for NTP-style sync
 - `status` with `msg="audio"` may precede an `AUDIO_CLIP` and can carry `urgent`
 
@@ -144,6 +144,7 @@ HTTP helpers (same laptop):
 - `POST /play` raw audio body, `Content-Type` = mime
 - `GET /health`, `GET /`
 - `GET /latency` — rolling e2e p50/p95, stage breakdown, clock offset, flash result, proximity snapshot
+- `GET /audio_log` — last ~200 intended `say` / clip outputs and phone lifecycle (`received` → `done`)
 - `POST /flash` — arm the on-demand flash detector (`{"t": laptop_ms}` optional)
 
 ---

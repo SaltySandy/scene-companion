@@ -189,16 +189,34 @@ class StreamClient(
                 val spoken = obj.optString("text")
                 val urgent = obj.optBoolean("urgent", false)
                 val captureTs = if (obj.has("capture_ts")) obj.optLong("capture_ts") else null
-                speech.enqueueSay(spoken, urgent, captureTs, Protocol.nowMs())
+                val audioId = obj.optString("id").ifBlank { null }
+                audioId?.let { sendAudioEvent(it, AudioEvent.RECEIVED) }
+                speech.enqueueSay(spoken, urgent, captureTs, Protocol.nowMs(), audioId)
             }
             Protocol.TYPE_STATUS -> {
                 if (obj.optString("msg") == "audio") {
                     // Following binary AUDIO_CLIP is the payload; urgent hint stored for next clip.
                     pendingUrgentClip = obj.optBoolean("urgent", false)
+                    pendingClipId = obj.optString("id").ifBlank { null }
                 }
             }
             Protocol.TYPE_PONG -> onPong(obj)
             Protocol.TYPE_HELLO_ACK -> Unit
+        }
+    }
+
+    fun sendAudioEvent(id: String, event: String, errorCode: Int? = null) {
+        val ws = socketRef.get() ?: return
+        if (!connected) return
+        val (vol, muted) = speech.volumeSnapshot()
+        try {
+            ws.send(
+                Protocol.encodeJson(
+                    Protocol.TYPE_AUDIO_EVENT,
+                    AudioEvent.fields(id, event, vol, muted, errorCode),
+                ),
+            )
+        } catch (_: Exception) {
         }
     }
 
@@ -258,6 +276,7 @@ class StreamClient(
     }
 
     @Volatile private var pendingUrgentClip = false
+    @Volatile private var pendingClipId: String? = null
 
     private fun handleBinary(data: ByteArray) {
         val msg = try {
@@ -268,8 +287,11 @@ class StreamClient(
         }
         if (msg.kind == Protocol.KIND_AUDIO) {
             val urgent = pendingUrgentClip
+            val clipId = pendingClipId
             pendingUrgentClip = false
-            speech.enqueueClip(msg.payload, msg.flags, urgent)
+            pendingClipId = null
+            clipId?.let { sendAudioEvent(it, AudioEvent.RECEIVED) }
+            speech.enqueueClip(msg.payload, msg.flags, urgent, clipId)
         }
     }
 

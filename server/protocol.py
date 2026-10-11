@@ -61,6 +61,8 @@ class MsgType:
     SYNC = "sync"
     FLASH = "flash"
     LATENCY = "latency"
+    AUDIO_EVENT = "audio_event"
+    AUDIO_OUT = "audio_out"
 
 
 @dataclass(frozen=True)

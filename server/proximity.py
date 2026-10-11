@@ -47,6 +47,9 @@ MIN_IMAGE = 32
 MAX_CLOSING_MPS = float(os.environ.get("SAW_PROXIMITY_MAX_CLOSING_MPS", "4.0"))
 SPEED_GAP_S = float(os.environ.get("SAW_PROXIMITY_SPEED_GAP_S", "0.50"))
 SPEED_EMA = float(os.environ.get("SAW_PROXIMITY_SPEED_EMA", "0.45"))
+LOW_LIGHT_MEAN = float(os.environ.get("SAW_PROXIMITY_LOW_LIGHT", "20"))
+NO_SIGNAL_CONTRAST = float(os.environ.get("SAW_PROXIMITY_NO_SIGNAL_CONTRAST", "12"))
+STATIONARY_MPS = float(os.environ.get("SAW_PROXIMITY_STATIONARY_MPS", "0.15"))
 
 
 @dataclass(frozen=True)
@@ -55,7 +58,12 @@ class DistanceEstimate:
     confidence: float = 1.0
     fill: float = 0.0
     apparent_width_px: float = 0.0
+    signal: str = "ok"  # ok | low_light | no_signal
     details: dict[str, Any] = field(default_factory=dict)
+
+    @property
+    def usable(self) -> bool:
+        return self.signal == "ok"
 
 
 class ProximityEstimator(Protocol):
@@ -76,6 +84,22 @@ def _decode_gray(jpeg: bytes) -> np.ndarray | None:
         h = max(1, int(img.height * MAX_PROC_WIDTH / img.width))
         img = img.resize((MAX_PROC_WIDTH, h), Image.BILINEAR)
     return np.asarray(img, dtype=np.float32)
+
+
+def classify_signal(arr: np.ndarray) -> str:
+    """Reject a covered lens / featureless dark field. Not an obstacle."""
+    mean = float(arr.mean())
+    p80 = float(np.percentile(arr, 80))
+    p20 = float(np.percentile(arr, 20))
+    contrast = p80 - p20
+    gx = np.abs(np.diff(arr, axis=1, prepend=arr[:, :1]))
+    edge = float((gx > 10.0).mean())
+    if mean < LOW_LIGHT_MEAN:
+        return "low_light"
+    # Featureless and still very dim (not a textured wall that happens to be dark).
+    if contrast < NO_SIGNAL_CONTRAST and edge < 0.02 and mean < 28.0:
+        return "no_signal"
+    return "ok"
 
 
 def mean_luminance(jpeg: bytes) -> float | None:
@@ -130,13 +154,24 @@ class CorridorLoomingEstimator:
         if corridor.size == 0:
             return None
 
+        signal = classify_signal(arr)
+        if signal != "ok":
+            return DistanceEstimate(
+                distance_m=0.0,
+                confidence=0.0,
+                fill=0.0,
+                signal=signal,
+                details={"mean": float(arr.mean()), "reason": signal},
+            )
+
         # Bright reference: sky / far field. When an object fills the sensor
         # the top strip is dark too — treat that as "already in your face".
         top = arr[: max(2, h // 6)]
         p80 = float(np.percentile(arr, 80))
         p20 = float(np.percentile(arr, 20))
         global_mean = float(arr.mean())
-        filled_frame = global_mean < 95.0 and (p80 - p20) < 40.0
+        # Near-black is handled above. A dim but featured frame can still be a wall.
+        filled_frame = 30.0 <= global_mean < 95.0 and (p80 - p20) < 40.0
         bg = max(p80, float(np.median(top)))
         if filled_frame:
             bg = max(bg, 180.0)
@@ -264,6 +299,7 @@ class ProximityEngine:
         self.processed = 0
         self.skipped_stale = 0
         self.warnings = 0
+        self.last_signal = "ok"
 
     def reset(self) -> None:
         self.samples.clear()
@@ -276,6 +312,7 @@ class ProximityEngine:
         self.processed = 0
         self.skipped_stale = 0
         self.warnings = 0
+        self.last_signal = "ok"
 
     def set_estimator(self, estimator: ProximityEstimator) -> None:
         self.estimator = estimator
@@ -371,8 +408,21 @@ class ProximityEngine:
             return decision
 
         if self.in_alarm and cooled and predicted <= self.threshold_m:
-            # Still in the hazard zone after cooldown — one more spoken warning.
-            pass
+            if closing < STATIONARY_MPS:
+                # Already warned; standing still. Don't nag every cooldown.
+                decision = WarningDecision(
+                    should_warn=False,
+                    reason="stationary",
+                    distance_m=estimate.distance_m,
+                    closing_mps=closing,
+                    predicted_m=predicted,
+                    lead_ms=lead,
+                    frame_age_ms=age,
+                    stale=False,
+                )
+                self.last_decision = decision
+                return decision
+            # Still closing in after cooldown — repeat once.
         elif self.in_alarm:
             decision = WarningDecision(
                 should_warn=False,
@@ -419,9 +469,29 @@ class ProximityEngine:
         self.processed += 1
         self.last_estimate = estimate
         if estimate is None:
+            self.last_signal = "empty"
             if self.last_decision and self.last_decision.predicted_m >= self.threshold_m + self.hysteresis_m:
                 self.in_alarm = False
             return None
+        self.last_signal = estimate.signal
+        if not estimate.usable:
+            # Covered lens / featureless field is not a wall. Drop motion so
+            # a later real scene does not inherit a fake slam.
+            self.samples.clear()
+            self.closing_mps = 0.0
+            self.in_alarm = False
+            decision = WarningDecision(
+                should_warn=False,
+                reason=estimate.signal,
+                distance_m=0.0,
+                closing_mps=0.0,
+                predicted_m=0.0,
+                lead_ms=0.0,
+                frame_age_ms=0.0,
+                stale=False,
+            )
+            self.last_decision = decision
+            return decision
         return self.decide(estimate, capture_ts, recv_ms, now_ms=now_ms, remaining_p95_ms=remaining_p95_ms)
 
     def snapshot(self) -> dict[str, Any]:
@@ -434,12 +504,13 @@ class ProximityEngine:
             "hysteresis_m": self.hysteresis_m,
             "cooldown_ms": self.cooldown_ms,
             "stale_ms": self.stale_ms,
-            "last_distance_m": None if est is None else round(est.distance_m, 3),
-            "last_fill": None if est is None else round(est.fill, 3),
+            "last_distance_m": None if est is None or not est.usable else round(est.distance_m, 3),
+            "last_fill": None if est is None or not est.usable else round(est.fill, 3),
             "last_closing_mps": round(self.closing_mps, 3),
             "last_predicted_m": None if dec is None else round(dec.predicted_m, 3),
             "last_lead_ms": None if dec is None else round(dec.lead_ms, 1),
             "last_reason": None if dec is None else dec.reason,
+            "last_signal": self.last_signal,
             "last_process_ms": round(self.last_process_ms, 2),
             "processed": self.processed,
             "skipped_stale": self.skipped_stale,

@@ -69,6 +69,15 @@ def render_empty(width: int = 160, height: int = 120) -> bytes:
     return buf.getvalue()
 
 
+def render_dark(width: int = 160, height: int = 120, *, value: int = 6) -> bytes:
+    """Near-black covered-lens frame (the field false-positive)."""
+    v = max(0, min(255, int(value)))
+    img = Image.new("RGB", (width, height), (v, v, v))
+    buf = io.BytesIO()
+    img.save(buf, format="JPEG", quality=90)
+    return buf.getvalue()
+
+
 def render_white_flash(width: int = 160, height: int = 120) -> bytes:
     img = Image.new("RGB", (width, height), (255, 255, 255))
     buf = io.BytesIO()

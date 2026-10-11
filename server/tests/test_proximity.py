@@ -11,12 +11,43 @@ from server.proximity import (
 )
 from server.proximity_frames import (
     approach_sequence,
+    render_dark,
     render_empty,
     render_obstacle,
     render_wall,
     render_white_flash,
 )
 from server.tests.fake_client import MINI_JPEG
+
+
+def test_covered_lens_is_low_light_not_an_obstacle() -> None:
+    est = CorridorLoomingEstimator()
+    jpeg = render_dark(value=6)
+    got = est.estimate(jpeg)
+    assert got is not None
+    assert got.signal == "low_light"
+    assert got.usable is False
+
+
+def test_dark_frame_does_not_warn_or_alarm(clean_state) -> None:
+    engine = ProximityEngine()
+    dec = engine.process_jpeg(render_dark(value=6), capture_ts=100, recv_ms=100, now_ms=100, remaining_p95_ms=0)
+    assert dec is not None
+    assert dec.should_warn is False
+    assert dec.reason == "low_light"
+    assert engine.last_signal == "low_light"
+    assert engine.in_alarm is False
+    snap = engine.snapshot()
+    assert snap["last_signal"] == "low_light"
+    assert snap["last_distance_m"] is None
+
+
+def test_featureless_dim_frame_is_no_signal() -> None:
+    est = CorridorLoomingEstimator()
+    got = est.estimate(render_dark(value=22))
+    assert got is not None
+    assert got.signal in {"low_light", "no_signal"}
+    assert got.usable is False
 
 
 def test_tiny_jpeg_is_not_an_obstacle() -> None:
@@ -209,6 +240,44 @@ def test_standing_still_inside_threshold_warns(clean_state) -> None:
     dec = engine.decide(engine.estimator.estimate(b""), 50, 50, now_ms=50, remaining_p95_ms=200)
     assert dec.closing_mps == 0.0
     assert dec.should_warn is True
+
+
+def test_stationary_does_not_rewarn_after_cooldown(clean_state) -> None:
+    book = LatencyBook()
+    book.consider_sync(0, 0, 0, 0)
+    engine = ProximityEngine(
+        estimator=FixedEstimator(0.22),
+        latency=book,
+        cooldown_ms=100,
+    )
+    first = engine.decide(engine.estimator.estimate(b""), 1_000, 1_000, now_ms=1_000, remaining_p95_ms=0)
+    assert first.should_warn is True
+    later = engine.decide(engine.estimator.estimate(b""), 1_200, 1_200, now_ms=1_200, remaining_p95_ms=0)
+    assert later.should_warn is False
+    assert later.reason == "stationary"
+    assert engine.warnings == 1
+
+
+def test_still_closing_rewarns_after_cooldown(clean_state) -> None:
+    book = LatencyBook()
+    book.consider_sync(0, 0, 0, 0)
+    dist = [0.8]
+    engine = ProximityEngine(
+        estimator=FixedEstimator(fn=lambda: dist[0]),
+        latency=book,
+        cooldown_ms=50,
+        threshold_m=0.3,
+    )
+    t = 5_000
+    engine.decide(engine.estimator.estimate(b""), t, t, now_ms=t, remaining_p95_ms=0)
+    dist[0] = 0.2
+    first = engine.decide(engine.estimator.estimate(b""), t + 200, t + 200, now_ms=t + 200, remaining_p95_ms=0)
+    assert first.should_warn is True
+    dist[0] = 0.12
+    again = engine.decide(engine.estimator.estimate(b""), t + 400, t + 400, now_ms=t + 400, remaining_p95_ms=0)
+    assert again.closing_mps > 0.15
+    assert again.should_warn is True
+    assert engine.warnings == 2
 
 
 def test_disabled_engine_returns_none(clean_state) -> None:

@@ -15,14 +15,17 @@ def clean_state():
     from server.ai_hook import reset_demo_state
     from server.hub import hub
     from server.latency import book
+    from server.audio_log import audio_log
     from server.proximity import engine
 
     reset_demo_state()
     hub.reset_for_tests()
     book.reset()
     engine.reset()
+    audio_log.reset()
     yield
     reset_demo_state()
     hub.reset_for_tests()
     book.reset()
     engine.reset()
+    audio_log.reset()

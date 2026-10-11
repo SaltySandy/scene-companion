@@ -29,9 +29,15 @@ class StreamService : LifecycleService() {
         super.onCreate()
         prefs = Prefs(this)
         var streamRef: StreamClient? = null
-        speech = SpeechQueue(this) { capture, ttsStart, sayRecv ->
-            streamRef?.sendTtsStart(capture, ttsStart, sayRecv)
-        }
+        speech = SpeechQueue(
+            this,
+            onTtsStart = { capture, ttsStart, sayRecv ->
+                streamRef?.sendTtsStart(capture, ttsStart, sayRecv)
+            },
+            onAudioEvent = { id, event, errorCode ->
+                streamRef?.sendAudioEvent(id, event, errorCode)
+            },
+        )
         speech.start()
         instance = this
         running = true

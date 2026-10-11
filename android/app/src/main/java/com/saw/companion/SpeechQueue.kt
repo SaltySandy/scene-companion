@@ -22,22 +22,42 @@ import java.util.UUID
 class SpeechQueue(
     context: Context,
     private val onTtsStart: ((captureTs: Long?, ttsStartTs: Long, sayRecvTs: Long?) -> Unit)? = null,
+    private val onAudioEvent: ((id: String, event: String, errorCode: Int?) -> Unit)? = null,
 ) {
     private val app = context.applicationContext
     private val main = Handler(Looper.getMainLooper())
     private val queue = ArrayDeque<Item>()
     private var tts: TextToSpeech? = null
     private var ttsReady = false
+    private var ttsInitFailed = false
     private var mediaPlayer: MediaPlayer? = null
     private var audioTrack: AudioTrack? = null
     private var busy = false
     private val pending = HashMap<String, Pending>()
+    private var playingId: String? = null
+    val audioManager: AudioManager = app.getSystemService(AudioManager::class.java)
 
-    private data class Pending(val captureTs: Long?, val sayRecvTs: Long?)
+    private data class Pending(val captureTs: Long?, val sayRecvTs: Long?, val audioId: String?)
 
     private sealed class Item {
-        data class Speak(val text: String, val captureTs: Long?, val sayRecvTs: Long?) : Item()
-        data class Clip(val bytes: ByteArray, val flags: Int) : Item()
+        abstract val audioId: String?
+        data class Speak(
+            val text: String,
+            val captureTs: Long?,
+            val sayRecvTs: Long?,
+            override val audioId: String?,
+        ) : Item()
+        data class Clip(val bytes: ByteArray, val flags: Int, override val audioId: String?) : Item()
+    }
+
+    fun volumeSnapshot(): Pair<Int, Boolean> {
+        val vol = audioManager.getStreamVolume(AudioManager.STREAM_MUSIC)
+        val muted = if (android.os.Build.VERSION.SDK_INT >= 23) {
+            audioManager.isStreamMute(AudioManager.STREAM_MUSIC)
+        } else {
+            vol == 0
+        }
+        return vol to muted
     }
 
     fun start() {
@@ -45,22 +65,33 @@ class SpeechQueue(
             if (tts != null) return@post
             tts = TextToSpeech(app) { status ->
                 ttsReady = status == TextToSpeech.SUCCESS
+                ttsInitFailed = status != TextToSpeech.SUCCESS
+                if (ttsInitFailed) {
+                    onAudioEvent?.invoke("", AudioEvent.TTS_NOT_READY, status)
+                }
                 tts?.language = Locale.getDefault()
                 tts?.setSpeechRate(1.05f)
                 tts?.setOnUtteranceProgressListener(object : UtteranceProgressListener() {
                     override fun onStart(utteranceId: String?) {
                         val wall = System.currentTimeMillis()
-                        val meta = synchronized(pending) { pending.remove(utteranceId) }
+                        val meta = synchronized(pending) { pending[utteranceId] }
                         onTtsStart?.invoke(meta?.captureTs, wall, meta?.sayRecvTs)
+                        meta?.audioId?.let { emit(it, AudioEvent.STARTED) }
                     }
                     override fun onDone(utteranceId: String?) {
+                        val meta = synchronized(pending) { pending.remove(utteranceId) }
+                        meta?.audioId?.let { emit(it, AudioEvent.DONE) }
                         main.post { onItemFinished() }
                     }
                     @Deprecated("deprecated")
                     override fun onError(utteranceId: String?) {
+                        val meta = synchronized(pending) { pending.remove(utteranceId) }
+                        meta?.audioId?.let { emit(it, AudioEvent.ERROR, -1) }
                         main.post { onItemFinished() }
                     }
                     override fun onError(utteranceId: String?, errorCode: Int) {
+                        val meta = synchronized(pending) { pending.remove(utteranceId) }
+                        meta?.audioId?.let { emit(it, AudioEvent.ERROR, errorCode) }
                         main.post { onItemFinished() }
                     }
                 })
@@ -84,30 +115,41 @@ class SpeechQueue(
         urgent: Boolean,
         captureTs: Long? = null,
         sayRecvTs: Long? = null,
+        audioId: String? = null,
     ) {
         val clean = text.trim()
         if (clean.isEmpty()) return
         main.post {
-            if (urgent) {
-                queue.clear()
-                synchronized(pending) { pending.clear() }
-                stopCurrent()
-            }
-            queue.addLast(Item.Speak(clean, captureTs, sayRecvTs))
+            if (urgent) flushUrgent()
+            queue.addLast(Item.Speak(clean, captureTs, sayRecvTs, audioId))
+            audioId?.let { emit(it, AudioEvent.QUEUED) }
             pump()
         }
     }
 
-    fun enqueueClip(bytes: ByteArray, flags: Int, urgent: Boolean) {
+    fun enqueueClip(bytes: ByteArray, flags: Int, urgent: Boolean, audioId: String? = null) {
         if (bytes.isEmpty()) return
         main.post {
-            if (urgent) {
-                queue.clear()
-                stopCurrent()
-            }
-            queue.addLast(Item.Clip(bytes, flags))
+            if (urgent) flushUrgent()
+            queue.addLast(Item.Clip(bytes, flags, audioId))
+            audioId?.let { emit(it, AudioEvent.QUEUED) }
             pump()
         }
+    }
+
+    private fun flushUrgent() {
+        for (item in queue) {
+            item.audioId?.let { emit(it, AudioEvent.INTERRUPTED) }
+        }
+        playingId?.let { emit(it, AudioEvent.INTERRUPTED) }
+        queue.clear()
+        synchronized(pending) { pending.clear() }
+        stopCurrent()
+    }
+
+    private fun emit(id: String, event: String, errorCode: Int? = null) {
+        if (id.isEmpty()) return
+        onAudioEvent?.invoke(id, event, errorCode)
     }
 
     private fun pump() {
@@ -115,32 +157,41 @@ class SpeechQueue(
         val item = queue.pollFirst() ?: return
         busy = true
         when (item) {
-            is Item.Speak -> speak(item.text, item.captureTs, item.sayRecvTs)
+            is Item.Speak -> speak(item.text, item.captureTs, item.sayRecvTs, item.audioId)
             is Item.Clip -> playClip(item)
         }
     }
 
-    private fun speak(text: String, captureTs: Long?, sayRecvTs: Long?) {
+    private fun speak(text: String, captureTs: Long?, sayRecvTs: Long?, audioId: String?) {
         val engine = tts
+        if (ttsInitFailed) {
+            audioId?.let { emit(it, AudioEvent.TTS_NOT_READY) }
+            busy = false
+            pump()
+            return
+        }
         if (engine == null || !ttsReady) {
             // TTS still loading — put it back and retry shortly.
-            queue.addFirst(Item.Speak(text, captureTs, sayRecvTs))
+            queue.addFirst(Item.Speak(text, captureTs, sayRecvTs, audioId))
             busy = false
             main.postDelayed({ pump() }, 150)
             return
         }
         val id = UUID.randomUUID().toString()
-        synchronized(pending) { pending[id] = Pending(captureTs, sayRecvTs) }
+        playingId = audioId
+        synchronized(pending) { pending[id] = Pending(captureTs, sayRecvTs, audioId) }
         val rc = engine.speak(text, TextToSpeech.QUEUE_FLUSH, null, id)
         if (rc != TextToSpeech.SUCCESS) {
             synchronized(pending) { pending.remove(id) }
+            audioId?.let { emit(it, AudioEvent.ERROR, rc) }
             onItemFinished()
         }
     }
 
     private fun playClip(item: Item.Clip) {
+        playingId = item.audioId
         if (item.flags == Protocol.FLAG_PCM) {
-            playPcm(item.bytes)
+            playPcm(item.bytes, item.audioId)
             return
         }
         try {
@@ -153,19 +204,25 @@ class SpeechQueue(
                     .build(),
             )
             player.setDataSource(ByteArrayDataSource(item.bytes))
-            player.setOnCompletionListener { onItemFinished() }
-            player.setOnErrorListener { _, _, _ ->
+            player.setOnCompletionListener {
+                item.audioId?.let { emit(it, AudioEvent.DONE) }
+                onItemFinished()
+            }
+            player.setOnErrorListener { _, what, _ ->
+                item.audioId?.let { emit(it, AudioEvent.ERROR, what) }
                 onItemFinished()
                 true
             }
             player.prepare()
             player.start()
+            item.audioId?.let { emit(it, AudioEvent.STARTED) }
         } catch (_: Exception) {
+            item.audioId?.let { emit(it, AudioEvent.ERROR, -1) }
             onItemFinished()
         }
     }
 
-    private fun playPcm(pcm: ByteArray) {
+    private fun playPcm(pcm: ByteArray, audioId: String? = null) {
         val sampleRate = 16_000
         val min = AudioTrack.getMinBufferSize(
             sampleRate,
@@ -189,9 +246,13 @@ class SpeechQueue(
         audioTrack = track
         track.write(pcm, 0, pcm.size)
         track.setNotificationMarkerPosition(pcm.size / 2)
+        audioId?.let { emit(it, AudioEvent.STARTED) }
         track.setPlaybackPositionUpdateListener(object : AudioTrack.OnPlaybackPositionUpdateListener {
             override fun onMarkerReached(audioTrack: AudioTrack?) {
-                main.post { onItemFinished() }
+                main.post {
+                    audioId?.let { emit(it, AudioEvent.DONE) }
+                    onItemFinished()
+                }
             }
             override fun onPeriodicNotification(audioTrack: AudioTrack?) = Unit
         })
@@ -237,6 +298,7 @@ class SpeechQueue(
         } catch (_: Exception) {
         }
         audioTrack = null
+        playingId = null
         busy = false
         pump()
     }

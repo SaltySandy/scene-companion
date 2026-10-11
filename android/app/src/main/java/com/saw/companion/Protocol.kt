@@ -37,6 +37,8 @@ object Protocol {
     const val TYPE_SYNC = "sync"
     const val TYPE_FLASH = "flash"
     const val TYPE_LATENCY = "latency"
+    const val TYPE_AUDIO_EVENT = "audio_event"
+    const val TYPE_AUDIO_OUT = "audio_out"
 
     data class BinaryMessage(
         val kind: Int,

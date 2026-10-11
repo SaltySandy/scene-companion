@@ -19,6 +19,7 @@ from sentry_sdk.integrations.fastapi import FastApiIntegration
 
 from server import protocol as proto
 from server.event_sinks import sinks
+from server.audio_log import audio_log
 from server.hub import hub, play, say
 from server.latency import book as latency_book
 from server.proximity import engine as prox_engine
@@ -133,6 +134,11 @@ async def latency() -> dict[str, object]:
     snap = latency_book.snapshot()
     snap["proximity"] = prox_engine.snapshot()
     return snap
+
+
+@app.get("/audio_log")
+async def http_audio_log() -> dict[str, object]:
+    return audio_log.snapshot()
 
 
 @app.post("/flash")
@@ -354,6 +360,28 @@ async def _handle_phone_text(_ws: WebSocket, text: str) -> None:
         await hub._broadcast_viewers_text(
             proto.encode_json(proto.MsgType.LATENCY, **latency_book.snapshot())
         )
+    elif kind == proto.MsgType.AUDIO_EVENT:
+        audio_id = str(obj.get("id") or "")
+        event = str(obj.get("event") or "")
+        if not audio_id or not event:
+            log.warning("bad audio_event from phone: %s", obj)
+            return
+        vol = obj.get("volume")
+        muted = obj.get("muted")
+        err = obj.get("error_code")
+        try:
+            vol_i = int(vol) if vol is not None else None
+        except (TypeError, ValueError):
+            vol_i = None
+        try:
+            err_i = int(err) if err is not None else None
+        except (TypeError, ValueError):
+            err_i = None
+        muted_b = None if muted is None else bool(muted)
+        entry = audio_log.note_event(audio_id, event, volume=vol_i, muted=muted_b, error_code=err_i)
+        if entry is not None:
+            log.info("audio_event id=%s event=%s summary=%s", audio_id, event, entry.summary())
+            await hub.broadcast_audio_entry(entry)
     elif kind == proto.MsgType.HELLO:
         log.info("phone hello: %s", obj)
     elif kind == proto.MsgType.CONFIG:

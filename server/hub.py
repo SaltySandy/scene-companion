@@ -13,6 +13,7 @@ from fastapi import WebSocket
 from server import protocol as proto
 from server.ai_hook import Play, Response, Say, on_frame
 from server.event_sinks import sinks
+from server.audio_log import audio_log
 from server.latency import book as latency_book
 from server.proximity import engine as prox_engine
 from server.proximity import mean_luminance
@@ -85,9 +86,11 @@ class Hub:
     ) -> None:
         if not text or not str(text).strip():
             return
+        audio_id = audio_log.next_id()
         fields: dict[str, Any] = {
             "text": str(text).strip(),
             "urgent": bool(urgent),
+            "id": audio_id,
         }
         if capture_ts is not None:
             fields["capture_ts"] = int(capture_ts)
@@ -101,14 +104,27 @@ class Hub:
             process_start_ms=ctx.get("process_start_ms"),
             process_end_ms=ctx.get("process_end_ms"),
         )
-        await self._send_phone_text(msg)
+        phone_connected = self.phone is not None
+        send_ok = await self._send_phone_text(msg)
+        is_hazard = bool(hazard) if hazard is not None else bool(urgent)
+        entry = audio_log.record(
+            audio_id=audio_id,
+            kind="say",
+            text=str(text).strip(),
+            urgent=bool(urgent),
+            hazard=is_hazard,
+            sent_ms=sent_ms,
+            phone_connected=phone_connected,
+            send_ok=send_ok,
+        )
         await self._broadcast_viewers_text(proto.encode_json(proto.MsgType.SAY, **fields))
-        log.info("say urgent=%s capture_ts=%s: %s", urgent, capture_ts, text)
+        await self._broadcast_viewers_text(proto.encode_json(proto.MsgType.AUDIO_OUT, **entry.to_dict()))
+        log.info("say id=%s urgent=%s capture_ts=%s send_ok=%s: %s", audio_id, urgent, capture_ts, send_ok, text)
         sinks.log_event(
             "say",
             str(text).strip(),
-            hazard=bool(hazard) if hazard is not None else bool(urgent),
-            meta={"urgent": bool(urgent), "capture_ts": capture_ts},
+            hazard=is_hazard,
+            meta={"urgent": bool(urgent), "capture_ts": capture_ts, "id": audio_id},
         )
 
     async def play(self, audio_bytes: bytes, mime: str = "audio/wav", urgent: bool = False) -> None:
@@ -116,16 +132,32 @@ class Hub:
             return
         flags = proto.mime_to_flag(mime)
         envelope = proto.encode_binary(proto.Kind.AUDIO_CLIP, audio_bytes, flags=flags)
+        audio_id = audio_log.next_id()
         # Urgent flag rides in JSON so the phone can flush before the clip arrives.
         meta = proto.encode_json(
             proto.MsgType.STATUS,
             msg="audio",
             urgent=bool(urgent),
             mime=proto.flag_to_mime(flags),
+            id=audio_id,
         )
-        await self._send_phone_text(meta)
-        await self._send_phone_bytes(envelope)
-        log.info("play mime=%s bytes=%d urgent=%s", mime, len(audio_bytes), urgent)
+        phone_connected = self.phone is not None
+        send_ok = await self._send_phone_text(meta)
+        if send_ok:
+            send_ok = await self._send_phone_bytes(envelope)
+        entry = audio_log.record(
+            audio_id=audio_id,
+            kind="clip",
+            text=f"clip {proto.flag_to_mime(flags)} {len(audio_bytes)} B",
+            urgent=bool(urgent),
+            hazard=bool(urgent),
+            sent_ms=proto.now_ms(),
+            phone_connected=phone_connected,
+            send_ok=send_ok,
+            mime=proto.flag_to_mime(flags),
+        )
+        await self._broadcast_viewers_text(proto.encode_json(proto.MsgType.AUDIO_OUT, **entry.to_dict()))
+        log.info("play id=%s mime=%s bytes=%d urgent=%s send_ok=%s", audio_id, mime, len(audio_bytes), urgent, send_ok)
 
     async def apply_response(self, response: Response, capture_ts: int | None = None) -> None:
         if response is None:
@@ -141,25 +173,32 @@ class Hub:
             elif isinstance(item, Play):
                 await self.play(item.audio_bytes, mime=item.mime, urgent=item.urgent)
 
-    async def _send_phone_text(self, text: str) -> None:
+    async def _send_phone_text(self, text: str) -> bool:
         ws = self.phone
         if ws is None:
-            return
+            return False
         try:
             await ws.send_text(text)
+            return True
         except Exception as exc:
             log.warning("phone send_text failed: %s", exc)
             self.detach_phone(ws)
+            return False
 
-    async def _send_phone_bytes(self, data: bytes) -> None:
+    async def _send_phone_bytes(self, data: bytes) -> bool:
         ws = self.phone
         if ws is None:
-            return
+            return False
         try:
             await ws.send_bytes(data)
+            return True
         except Exception as exc:
             log.warning("phone send_bytes failed: %s", exc)
             self.detach_phone(ws)
+            return False
+
+    async def broadcast_audio_entry(self, entry) -> None:
+        await self._broadcast_viewers_text(proto.encode_json(proto.MsgType.AUDIO_OUT, **entry.to_dict()))
 
     async def _broadcast_viewers_text(self, text: str) -> None:
         dead: list[WebSocket] = []
@@ -223,6 +262,7 @@ class Hub:
             predicted_m=prox["last_predicted_m"],
             closing_mps=prox["last_closing_mps"],
             prox_ms=prox["last_process_ms"],
+            prox_signal=prox.get("last_signal"),
         )
 
     async def worker_loop(self) -> None:
@@ -332,6 +372,7 @@ class Hub:
             pass
         prox_engine.reset()
         latency_book.reset()
+        audio_log.reset()
 
 
 # Process-wide hub used by HTTP handlers and the hook helpers.

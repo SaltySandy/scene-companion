@@ -47,6 +47,12 @@
     }
     .flash-veil.on { display: block; }
     .warn { color: var(--bad); }
+    .audio-out { font: 12px/1.45 ui-monospace, monospace; color: var(--ink); max-height: 220px; overflow: auto; }
+    .audio-out .row-a { display: grid; grid-template-columns: 52px 1fr; gap: 6px; padding: 6px 0; border-bottom: 1px solid #2a3340; }
+    .audio-out .id { color: var(--muted); }
+    .audio-out .sum.bad { color: var(--bad); }
+    .audio-out .sum.ok { color: var(--good); }
+    .audio-out .sum.warn { color: var(--accent); }
   </style>
 </head>
 <body>
@@ -88,6 +94,11 @@
         <div class="stat"><span>Predicted at TTS</span><b id="proxP">—</b></div>
         <div class="stat"><span>Closing speed</span><b id="proxV">—</b></div>
         <div class="stat"><span>Estimator CPU</span><b id="proxMs">—</b></div>
+        <div class="stat"><span>Signal</span><b id="proxSig">—</b></div>
+      </div>
+      <div class="card">
+        <h2>Audio out</h2>
+        <div class="audio-out" id="audioOut">No audio sent yet.</div>
       </div>
       <div class="card">
         <h2>Speak to the phone</h2>
@@ -174,9 +185,15 @@
         $("proxP").textContent = obj.predicted_m == null ? "—" : obj.predicted_m.toFixed(2) + " m";
         $("proxV").textContent = obj.closing_mps == null ? "—" : obj.closing_mps.toFixed(2) + " m/s";
         if (obj.prox_ms != null) $("proxMs").textContent = obj.prox_ms + " ms";
+        if (obj.prox_signal) {
+          $("proxSig").textContent = obj.prox_signal;
+          $("proxSig").classList.toggle("warn", obj.prox_signal !== "ok");
+        }
         $("proxP").classList.toggle("warn", obj.predicted_m != null && obj.predicted_m <= 0.3);
       } else if (obj.type === "say") {
         log("say" + (obj.urgent ? " (urgent)" : "") + ": " + obj.text);
+      } else if (obj.type === "audio_out") {
+        upsertAudio(obj);
       } else if (obj.type === "hello_ack") {
         $("phone").textContent = obj.phone_connected ? "connected" : "offline";
         log("hello_ack proto=" + obj.proto);
@@ -228,6 +245,10 @@
         $("proxP").textContent = px.last_predicted_m == null ? "—" : px.last_predicted_m.toFixed(2) + " m";
         $("proxV").textContent = px.last_closing_mps == null ? "—" : px.last_closing_mps.toFixed(2) + " m/s";
         if (px.last_process_ms != null) $("proxMs").textContent = px.last_process_ms + " ms";
+        if (px.last_signal) {
+          $("proxSig").textContent = px.last_signal;
+          $("proxSig").classList.toggle("warn", px.last_signal !== "ok");
+        }
       }
       if (j.flash && j.flash.last) {
         $("flashResult").textContent = "scene→processed " + j.flash.last.scene_to_processed_ms + " ms";
@@ -240,8 +261,45 @@
         applyLatency(await r.json());
       } catch { /* viewer still works if the poll fails */ }
     }
+    const audioById = new Map();
+    function sumClass(summary) {
+      if (!summary) return "warn";
+      if (summary.includes("done") && !summary.includes("silent")) return "ok";
+      if (summary.includes("started") && !summary.includes("silent") && !summary.includes("never")) return "ok";
+      if (summary.includes("no phone") || summary.includes("failed") || summary.includes("error") || summary.includes("silent") || summary.includes("never") || summary.includes("no phone report") || summary.includes("tts not")) return "bad";
+      return "warn";
+    }
+    function renderAudio() {
+      const el = $("audioOut");
+      const rows = [...audioById.values()].reverse();
+      if (!rows.length) { el.textContent = "No audio sent yet."; return; }
+      el.innerHTML = rows.map((e) => {
+        const when = e.sent_ms ? new Date(e.sent_ms).toLocaleTimeString() : "";
+        const flag = (e.urgent || e.hazard) ? " urgent" : "";
+        const vol = (e.volume != null) ? ` vol=${e.volume}${e.muted ? " muted" : ""}` : "";
+        return `<div class="row-a" data-id="${e.id}">
+          <div class="id">${e.id}</div>
+          <div><div>${e.kind}${flag}: ${e.text || ""}</div>
+          <div class="sum ${sumClass(e.summary)}">${e.summary || "sent"} · ${when}${vol}</div></div>
+        </div>`;
+      }).join("");
+    }
+    function upsertAudio(e) {
+      if (!e || !e.id) return;
+      audioById.set(e.id, e);
+      renderAudio();
+    }
+    async function refreshAudio() {
+      try {
+        const r = await fetch("/audio_log");
+        const j = await r.json();
+        (j.entries || []).forEach(upsertAudio);
+      } catch { /* ignore */ }
+    }
     setInterval(refreshLatency, 1500);
+    setInterval(refreshAudio, 1500);
     refreshLatency();
+    refreshAudio();
 
     $("flashBtn").onclick = async () => {
       const t = Date.now();

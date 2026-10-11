@@ -6,6 +6,31 @@ Build/install: `adb install -r /opt/cursor/artifacts/app-debug.apk` (or `android
 
 ---
 
+## 0. No audio — hardware vs software (use the Audio out panel)
+
+Server logs can show `say` while the phone is silent. Open the viewer **Audio out** panel (or `GET /audio_log`). Each row is one intended output with an `id` that the phone echoes.
+
+Install the **current** APK first (`adb install -r …/app-debug.apk`). An older APK never sends `audio_event`, `tts_start`, or `config.level`.
+
+| Panel summary | Meaning | What to do |
+| --- | --- | --- |
+| `no phone connected` | Laptop never had a stream socket | Address / `adb reverse` / tunnel. Phone Start. |
+| `send failed` | Socket died on write | Reconnect. |
+| `sent, no phone report` | Bytes left the laptop; this APK does not report lifecycle | **Old APK.** Install the build from this branch. |
+| `received, never started` / `received, queued` | Phone got it; TTS/player never began | Software: TTS engine, TalkBack hogging audio, or stuck queue. |
+| `tts not ready` | `TextToSpeech` init failed | Device TTS / language data. |
+| `error (code)` | TTS/player `onError` | Software. Note the code. |
+| `started` or `started, done` | Engine started (and finished) | If you still hear nothing: **volume / mute / hardware**. Row shows `vol=` and `muted`. |
+| `started, done, but silent` | Engine ran, STREAM_MUSIC is 0 or muted | Unmute, raise media volume, check a Bluetooth sink with volume 0. |
+| `interrupted` | An urgent `say` flushed this one | Expected for hazards. |
+
+**Pass:** A viewer **Say** while streaming becomes a row that moves `sent` → `received` → `queued` → `started` → `done`, and you hear it when volume > 0.  
+**Fail:** Rows stay `sent, no phone report` on the new APK, or `started, done` with vol>0 and still silent (then hardware / TalkBack / wrong stream).
+
+Cover the camera: **Signal** should read `low_light` / `no_signal`. It must **not** add a `stop, obstacle ahead` every 2 s.
+
+---
+
 ## 1. Capture timestamp source
 
 1. Start streaming on a real phone (not the emulator).
