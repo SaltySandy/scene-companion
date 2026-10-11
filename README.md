@@ -218,6 +218,32 @@ PYTHONPATH=. python -m pytest server/tests/test_phone_page.py server/tests/test_
 
 `test_phone_compat.py` boots the servers from `feat/proximity` and `cursor/proximity-warning-977b` in git worktrees (or a dialect stub if a branch will not start) and drives the same JS protocol the browser uses.
 
+### Replay scored scenes
+
+Eight **synthetic, AI-generated** photos of the demo room live in `server/tests/fixtures/scenes/` (full-size originals plus 640×480 stream crops). `scripts/replay_scenes.py` feeds each frame through `nav.analyze` and through the live hook the same way the phone would, then prints a scorecard.
+
+Windows PowerShell (repo root):
+
+```powershell
+$env:SENTRY_DSN = ""
+$env:PYTHONPATH = "."
+python scripts/replay_scenes.py
+```
+
+Against a laptop already running on 8765, 8766, or 8767 (including the `/phone` web client):
+
+```powershell
+python scripts/replay_scenes.py --url http://127.0.0.1:8765
+```
+
+Sequence continuity (entry → blocking chair → door):
+
+```powershell
+python scripts/replay_scenes.py --sequence 01,02,04
+```
+
+`--mode websocket` boots a throwaway server and talks SAW v1 as a fake phone. `--llm-judge` adds an optional API-key utterance judge; the default score is deterministic keyword checks (direction + stop). Set `SAW_NAV=1` on the laptop if you want the live hook to speak the navigation utterance. After PR #6 (Brian's proximity) lands, the same command captures `proximity` heartbeats and scores them in the last column.
+
 ---
 
 ## Error monitoring

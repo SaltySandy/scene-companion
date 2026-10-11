@@ -46,13 +46,29 @@ _frame_times: deque[float] = deque()
 _last_announce = 0.0
 
 
+def _nav_say(jpeg_bytes: bytes) -> Say | None:
+    """Optional navigation stage. Off unless SAW_NAV=1 so the demo stub and
+    Brian's upcoming proximity heartbeat stay the default live path.
+    """
+    if (os.environ.get("SAW_NAV") or "0").strip() in {"0", "", "false", "off"}:
+        return None
+    try:
+        from server.nav import analyze
+    except ImportError:
+        return None
+    result = analyze(jpeg_bytes)
+    text = (result.utterance or "").strip()
+    if not text:
+        return None
+    return Say(text, urgent=bool(result.should_stop))
+
+
 async def on_frame(jpeg_bytes: bytes, ts: int) -> Response:
     """Called with the latest JPEG. Keep this non-blocking or await I/O.
 
     ``jpeg_bytes`` is a complete JPEG. ``ts`` is the phone's capture time in
     Unix epoch milliseconds (clock skew vs the laptop is expected).
     """
-    del jpeg_bytes  # demo stub does not inspect pixels
     now = time.time()
     _frame_times.append(now)
     cutoff = now - 1.0
@@ -61,9 +77,10 @@ async def on_frame(jpeg_bytes: bytes, ts: int) -> Response:
     fps = len(_frame_times)
 
     global _last_announce
+    demo: Say | None = None
     if ANNOUNCE_EVERY_SEC > 0 and now - _last_announce >= ANNOUNCE_EVERY_SEC:
         _last_announce = now
-        return Say(f"frame received, {fps} per second")
+        demo = Say(f"frame received, {fps} per second")
 
     # --- Vision LLM example (commented; needs a key, not required to run) ---
     # import base64
@@ -105,7 +122,13 @@ async def on_frame(jpeg_bytes: bytes, ts: int) -> Response:
     # # # run in a thread if the SDK is sync: result = await asyncio.to_thread(model.generate_content, [...])
     # # return Say(result.text)
 
-    return None
+    nav = _nav_say(jpeg_bytes)
+    items = [item for item in (demo, nav) if item is not None]
+    if not items:
+        return None
+    if len(items) == 1:
+        return items[0]
+    return items
 
 
 async def on_transcript(text: str, is_final: bool, ts: int) -> None:
