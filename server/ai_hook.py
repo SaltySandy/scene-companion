@@ -1,23 +1,32 @@
-"""AI hook — put vision / LLM logic here.
+"""AI hook: the proximity sensor runs here.
 
-``on_frame`` is called from a latest-frame worker: a slow model never stalls
-the WebSocket. If frames arrive faster than you can think, older ones are
-dropped and only the newest JPEG is processed.
+``on_frame`` is called from the latest-frame worker with only the newest JPEG.
+It runs metric depth plus sector analysis in a thread (``asyncio.to_thread``)
+and returns a ``ProximityReading``. The hub sends it to the phone as a heartbeat
+on every processed frame and applies the staleness gate; this module never
+touches the hub.
 
-Return a ``Say`` / ``Play`` (or a list of them) to talk back to the phone,
-or call ``await say(...)`` / ``await play(...)`` from ``broadcast``.
+If the depth model or its dependencies are missing, every reading is
+``state="unknown"`` so the phone keeps saying "sensor lost" instead of going
+quiet. Set SAW_PROXIMITY=0 to turn the sensor off (for /debug/proximity tests).
 
-The default implementation is a demo stub that proves the loop: every few
-seconds it speaks ``frame received, N per second``.
+You may also return ``Say`` / ``Play`` items (or a list mixing them with the
+reading) to talk to the phone.
 """
 
 from __future__ import annotations
 
+import asyncio
+import logging
 import os
 import time
 from collections import deque
 from dataclasses import dataclass
-from typing import Sequence
+from typing import Any, Sequence
+
+import sentry_sdk
+
+log = logging.getLogger("saw.ai")
 
 # ---------------------------------------------------------------------------
 # Response types the worker understands
@@ -37,75 +46,166 @@ class Play:
     urgent: bool = False
 
 
-Response = Say | Play | Sequence[Say | Play] | None
+@dataclass(frozen=True)
+class ProximityReading:
+    """What the sensor saw in one frame. level is after hysteresis; raw_level before."""
 
-# Demo: announce roughly every N seconds so testers hear the loop.
-ANNOUNCE_EVERY_SEC = float(os.environ.get("SAW_DEMO_ANNOUNCE_SEC", "5"))
+    state: str  # "ok" or "unknown"
+    level: str | None = None
+    raw_level: str | None = None
+    levels: dict[str, str] | None = None
+    sectors_m: dict[str, float] | None = None
+    model: str | None = None
+
+
+Response = Say | Play | ProximityReading | Sequence[Say | Play | ProximityReading] | None
+
+UNKNOWN = ProximityReading(state="unknown")
+
+# ---------------------------------------------------------------------------
+# Proximity sensor
+# ---------------------------------------------------------------------------
+
+PROXIMITY_ON = (os.environ.get("SAW_PROXIMITY") or "1").strip() != "0"
+
+_model: Any = None
+_model_tried = False
+_cfg: Any = None
+_tracker: Any = None
+
+# "What is it" descriptions (server/ai/describe.py): background tasks on the event loop.
+_gate: Any = None
+_levels: dict[str, str] = {}  # latest held levels, read when a description comes back
+_tasks: set[asyncio.Task[None]] = set()
+
+
+def warmup() -> str | None:
+    """Load the depth model (blocking; call via to_thread at startup). Returns its name."""
+    global _model, _model_tried, _cfg, _tracker
+    if _model_tried:
+        return getattr(_model, "name", None)
+    _model_tried = True
+    if not PROXIMITY_ON:
+        log.info("proximity sensor off (SAW_PROXIMITY=0)")
+        return None
+    try:
+        from server.ai import depth
+        from server.ai.proximity import LevelTracker, ProximityConfig
+
+        _cfg = ProximityConfig.from_env()
+        _tracker = LevelTracker()
+        _model = depth.load()
+    except ImportError as exc:
+        log.warning("proximity sensor unavailable: %s (pip install -r server/requirements-ai.txt)", exc)
+        _model = None
+    return getattr(_model, "name", None)
+
+
+def _infer(jpeg_bytes: bytes) -> Any:
+    """Runs in a worker thread: bytes in, plain data out."""
+    from server.ai.proximity import analyze
+
+    return analyze(_model.predict(jpeg_bytes), _cfg)
+
+
+async def read_proximity(jpeg_bytes: bytes) -> ProximityReading:
+    if not _model_tried:
+        await asyncio.to_thread(warmup)
+    if _model is None:
+        return UNKNOWN
+    try:
+        result = await asyncio.to_thread(_infer, jpeg_bytes)
+    except asyncio.CancelledError:
+        raise
+    except Exception:
+        log.exception("depth inference failed")
+        sentry_sdk.capture_exception()
+        _tracker.reset()
+        return UNKNOWN
+    from server.ai.proximity import overall
+
+    held = _tracker.update(result.levels)
+    _maybe_describe(jpeg_bytes, held)
+    return ProximityReading(
+        state="ok",
+        level=overall(held),
+        raw_level=result.level,
+        levels=held,
+        sectors_m=result.sectors_m,
+        model=_model.name,
+    )
+
+
+def _maybe_describe(jpeg_bytes: bytes, held: dict[str, str]) -> None:
+    """Start a description task when a new obstacle appears. Never awaits it."""
+    global _gate, _levels
+    prev, _levels = _levels, dict(held)
+    try:
+        from server.ai import describe
+    except ImportError:
+        return
+    if not describe.available():
+        return
+    if _gate is None:
+        _gate = describe.DescribeGate()
+    sector = _gate.check(prev, held, describe.monotonic())
+    if sector:
+        task = asyncio.create_task(_describe_and_say(jpeg_bytes, sector, describe.monotonic()))
+        _tasks.add(task)
+        task.add_done_callback(_tasks.discard)
+
+
+async def _describe_and_say(jpeg_bytes: bytes, sector: str, started: float) -> None:
+    from server.ai import describe
+    from server.hub import say
+
+    try:
+        label = await describe.describe(jpeg_bytes, sector)
+    finally:
+        _gate.done()
+    if not label:
+        return
+    if describe.monotonic() - started > describe.MAX_AGE_S:
+        log.info("dropping late description %r", label)
+        return
+    if _levels.get(sector, "clear") == "clear":
+        log.info("dropping description %r: %s sector cleared", label, sector)
+        return
+    await say(f"{label} {describe.WHERE[sector]}", urgent=False)
+
+
+# ---------------------------------------------------------------------------
+# Demo announcement (off by default; tests turn it on)
+# ---------------------------------------------------------------------------
+
+ANNOUNCE_EVERY_SEC = float(os.environ.get("SAW_DEMO_ANNOUNCE_SEC", "0"))
 
 _frame_times: deque[float] = deque()
 _last_announce = 0.0
 
 
-async def on_frame(jpeg_bytes: bytes, ts: int) -> Response:
-    """Called with the latest JPEG. Keep this non-blocking or await I/O.
-
-    ``jpeg_bytes`` is a complete JPEG. ``ts`` is the phone's capture time in
-    Unix epoch milliseconds (clock skew vs the laptop is expected).
-    """
-    del jpeg_bytes  # demo stub does not inspect pixels
+def _demo_announce() -> Say | None:
+    global _last_announce
     now = time.time()
     _frame_times.append(now)
-    cutoff = now - 1.0
-    while _frame_times and _frame_times[0] < cutoff:
+    while _frame_times and _frame_times[0] < now - 1.0:
         _frame_times.popleft()
-    fps = len(_frame_times)
-
-    global _last_announce
     if ANNOUNCE_EVERY_SEC > 0 and now - _last_announce >= ANNOUNCE_EVERY_SEC:
         _last_announce = now
-        return Say(f"frame received, {fps} per second")
-
-    # --- Vision LLM example (commented; needs a key, not required to run) ---
-    # import base64
-    # import httpx
-    #
-    # api_key = os.environ.get("OPENAI_API_KEY") or os.environ.get("GEMINI_API_KEY")
-    # if not api_key:
-    #     return None
-    #
-    # # OpenAI-compatible vision (OPENAI_BASE_URL defaults to api.openai.com)
-    # if os.environ.get("OPENAI_API_KEY"):
-    #     b64 = base64.b64encode(jpeg_bytes).decode("ascii")
-    #     url = os.environ.get("OPENAI_BASE_URL", "https://api.openai.com/v1")
-    #     model = os.environ.get("SAW_VISION_MODEL", "gpt-4o-mini")
-    #     async with httpx.AsyncClient(timeout=20) as client:
-    #         r = await client.post(
-    #             f"{url.rstrip('/')}/chat/completions",
-    #             headers={"Authorization": f"Bearer {api_key}"},
-    #             json={
-    #                 "model": model,
-    #                 "messages": [{
-    #                     "role": "user",
-    #                     "content": [
-    #                         {"type": "text", "text": "Describe hazards and nearby objects for a blind pedestrian in one short sentence."},
-    #                         {"type": "image_url", "image_url": {"url": f"data:image/jpeg;base64,{b64}"}},
-    #                     ],
-    #                 }],
-    #                 "max_tokens": 80,
-    #             },
-    #         )
-    #         r.raise_for_status()
-    #         text = r.json()["choices"][0]["message"]["content"]
-    #         return Say(text)
-    #
-    # # Gemini (GEMINI_API_KEY)
-    # # import google.generativeai as genai  # pip install google-generativeai
-    # # genai.configure(api_key=os.environ["GEMINI_API_KEY"])
-    # # model = genai.GenerativeModel(os.environ.get("SAW_VISION_MODEL", "gemini-2.0-flash"))
-    # # # run in a thread if the SDK is sync: result = await asyncio.to_thread(model.generate_content, [...])
-    # # return Say(result.text)
-
+        return Say(f"frame received, {len(_frame_times)} per second")
     return None
+
+
+async def on_frame(jpeg_bytes: bytes, ts: int) -> Response:
+    """Called with the latest JPEG. ``ts`` is the phone capture time (epoch ms, phone clock)."""
+    del ts
+    out: list[Say | Play | ProximityReading] = []
+    if PROXIMITY_ON:
+        out.append(await read_proximity(jpeg_bytes))
+    announce = _demo_announce()
+    if announce:
+        out.append(announce)
+    return out or None
 
 
 async def on_transcript(text: str, is_final: bool, ts: int) -> None:

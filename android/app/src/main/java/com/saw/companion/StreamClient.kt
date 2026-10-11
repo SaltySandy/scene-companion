@@ -27,6 +27,7 @@ class StreamClient(
     interface Listener {
         fun onState(state: ConnectionState, spoken: String)
         fun onHaptic(connected: Boolean)
+        fun onProximity(p: Protocol.Proximity)
     }
 
     enum class ConnectionState { IDLE, CONNECTING, CONNECTED, RETRYING, STOPPED }
@@ -60,6 +61,12 @@ class StreamClient(
         setState(ConnectionState.STOPPED, "stopped")
     }
 
+    /** True when a frame sent now would go straight out. The camera skips encoding otherwise. */
+    fun readyToSend(): Boolean {
+        val ws = socketRef.get() ?: return false
+        return connected && ws.queueSize() == 0L && !sending.get()
+    }
+
     fun sendJpeg(jpeg: ByteArray, timestampMs: Long): Boolean {
         val ws = socketRef.get() ?: return false
         if (!connected) return false
@@ -83,6 +90,17 @@ class StreamClient(
             ws.send(Protocol.encodeJson(Protocol.TYPE_SPEAKING, mapOf("active" to active)))
         } catch (_: Exception) {
         }
+    }
+
+    /** Tell the laptop when the cue for a frame started (phone clock). Tiny; sent best-effort. */
+    fun sendAck(frameKey: Long, cueStartTs: Long, state: String) {
+        if (!connected) return
+        socketRef.get()?.send(
+            Protocol.encodeJson(
+                Protocol.TYPE_ACK,
+                mapOf("frame_key" to frameKey, "cue_start_ts" to cueStartTs, "state" to state),
+            ),
+        )
     }
 
     fun sendMicPcm(pcm: ByteArray, timestampMs: Long): Boolean {
@@ -182,6 +200,15 @@ class StreamClient(
                     // Following binary AUDIO_CLIP is the payload; urgent hint stored for next clip.
                     pendingUrgentClip = obj.optBoolean("urgent", false)
                 }
+            }
+            Protocol.TYPE_PROXIMITY -> listener.onProximity(Protocol.parseProximity(obj))
+            Protocol.TYPE_PING -> {
+                // Laptop clock sync: echo t0 and stamp our clock as late as possible.
+                val reply = Protocol.encodeJson(
+                    Protocol.TYPE_PONG,
+                    mapOf("t0" to obj.optLong("t0"), "tp" to Protocol.nowMs()),
+                )
+                socketRef.get()?.send(reply)
             }
             Protocol.TYPE_PONG, Protocol.TYPE_HELLO_ACK -> Unit
         }

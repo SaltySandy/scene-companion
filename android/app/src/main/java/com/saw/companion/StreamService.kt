@@ -10,6 +10,7 @@ import android.content.pm.ServiceInfo
 import android.os.Build
 import android.os.IBinder
 import android.os.PowerManager
+import android.os.SystemClock
 import android.os.VibrationEffect
 import android.os.Vibrator
 import android.os.VibratorManager
@@ -23,6 +24,8 @@ class StreamService : LifecycleService() {
     private var client: StreamClient? = null
     private var camera: CameraStreamer? = null
     private var mic: MicStreamer? = null
+    private val cuePolicy = CuePolicy()
+    private var cue: ProximityCue? = null
     private var wakeLock: PowerManager.WakeLock? = null
 
     override fun onCreate() {
@@ -30,12 +33,15 @@ class StreamService : LifecycleService() {
         prefs = Prefs(this)
         speech = SpeechQueue(this)
         speech.start()
+        cue = ProximityCue(this, cuePolicy, speech) { key, ts, state -> client?.sendAck(key, ts, state) }
+            .also { it.start() }
         instance = this
         running = true
         startInForeground()
         acquireWakeLock()
         val streamClient = StreamClient(prefs, speech, object : StreamClient.Listener {
             override fun onState(state: StreamClient.ConnectionState, spoken: String) {
+                cuePolicy.onConnection(state == StreamClient.ConnectionState.CONNECTED)
                 lastSpoken = spoken
                 sendBroadcast(
                     Intent(ACTION_STATUS)
@@ -51,11 +57,15 @@ class StreamService : LifecycleService() {
             override fun onHaptic(connected: Boolean) {
                 pulse(if (connected) 40 else 80)
             }
+
+            override fun onProximity(p: Protocol.Proximity) {
+                cuePolicy.onProximity(p, SystemClock.elapsedRealtime())
+            }
         })
         client = streamClient
         speech.onSpeakingChanged = { active -> streamClient.sendSpeaking(active) }
         streamClient.start()
-        camera = CameraStreamer(this, this, prefs) { jpeg, ts ->
+        camera = CameraStreamer(this, this, prefs, streamClient::readyToSend) { jpeg, ts ->
             streamClient.sendJpeg(jpeg, ts)
         }.also { it.start() }
         if (prefs.micEnabled) {
@@ -92,6 +102,7 @@ class StreamService : LifecycleService() {
         mic?.stop()
         camera?.shutdown()
         client?.stop()
+        cue?.stop()
         speech.shutdown()
         releaseWakeLock()
         sendBroadcast(

@@ -59,6 +59,16 @@ class MsgType:
     SPEAKING = "speaking"
     TRANSCRIPT = "transcript"
     ERROR = "error"
+    PROXIMITY = "proximity"
+    ACK = "ack"  # phone -> laptop: {frame_key, cue_start_ts (phone clock), state}
+
+
+# Proximity heartbeat (laptop -> phone and viewers). state "unknown" means the
+# laptop cannot vouch for the path ahead; the phone must treat it like silence.
+PROXIMITY_OK = "ok"
+PROXIMITY_UNKNOWN = "unknown"
+LEVELS = ("clear", "near", "danger")
+SECTORS = ("left", "center", "right")
 
 
 @dataclass(frozen=True)
@@ -117,6 +127,31 @@ def decode_json(text: str) -> dict[str, Any]:
     if "type" not in obj:
         raise ValueError("JSON message missing type")
     return obj
+
+
+def encode_proximity(
+    seq: int,
+    state: str,
+    level: str | None = None,
+    levels: dict[str, str] | None = None,
+    sectors_m: dict[str, float] | None = None,
+    frame_key: int | None = None,
+    age_ms: int | None = None,
+) -> str:
+    if state not in (PROXIMITY_OK, PROXIMITY_UNKNOWN):
+        raise ValueError(f"bad proximity state: {state}")
+    if state == PROXIMITY_OK and level not in LEVELS:
+        raise ValueError(f"bad proximity level: {level}")
+    return encode_json(
+        MsgType.PROXIMITY,
+        seq=seq,
+        state=state,
+        level=level if state == PROXIMITY_OK else None,
+        levels=levels,
+        sectors_m=sectors_m,
+        frame_key=frame_key,
+        age_ms=age_ms,
+    )
 
 
 def now_ms() -> int:

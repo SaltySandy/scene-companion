@@ -8,6 +8,10 @@ Hackathon skeleton for an AI-assisted situational-awareness tool. The **phone is
 
 Protocol version: **v1**.
 
+**Proximity sensor demo:** the laptop runs metric depth on each frame and streams a left/center/right
+heartbeat that the phone plays as tones and haptics. Setup, safety rules, preflight, and tuning are in
+[docs/DEMO.md](docs/DEMO.md).
+
 ---
 
 ## 5-minute quickstart
@@ -155,7 +159,12 @@ If a frame is still on the phone’s outbound WebSocket queue, the next JPEG is 
 
 Every text message is `{"v":1,"type":"..."}`.
 
-Phone → laptop: `hello`, `config` (`width`, `height`, `fps`, `quality`, `mic`), `ping`, `speaking`.
+Phone → laptop: `hello`, `config` (`width`, `height`, `fps`, `quality`, `mic`), `ping`,
+`speaking`,
+`pong` `{"t0":<echoed>,"tp":<phone epoch ms>}` (answer to a laptop clock ping),
+`ack` `{"frame_key":<capture_ts>,"cue_start_ts":<phone epoch ms>,"state":"clear|near|danger|lost"}`
+(sent once per frame, after the first audio chunk driven by that frame's heartbeat is written).
+`cue_start_ts - capture_ts` is camera-to-ear latency on one clock, no sync needed.
 
 `speaking` is half-duplex: `{"v":1,"type":"speaking","active":true}` while the phone is playing TTS or a clip. The server drops mic audio until that flag clears, plus a short tail. `say()` also mutes for about `0.45 + 0.05 * len(text)` seconds (capped at 8) so the speaker does not get transcribed before the phone flag arrives.
 
@@ -164,6 +173,13 @@ Laptop → phone:
 - `hello_ack`
 - `say` — `{"v":1,"type":"say","text":"...","urgent":false}` (Android TTS; lowest latency, works offline)
 - `pong`
+- `ping` `{"t0":<laptop epoch ms>}` — clock sync; the phone answers `pong` with `t0` and its own
+  clock `tp` right away. Sent 5× at connect, then every 2 s. Clients must ignore types they don't know.
+- `proximity` — heartbeat on every processed frame:
+  `{"seq":42,"state":"ok","level":"near","levels":{"left":"clear","center":"near","right":"clear"},
+  "sectors_m":{"left":3.1,"center":1.2,"right":2.8},"frame_key":<capture_ts>,"age_ms":180}`.
+  `state:"unknown"` (level null) means the laptop cannot vouch for the path; the phone treats it
+  like silence and plays the sensor-lost cue, as it does when heartbeats stop for ~1 s.
 - `status` with `msg="audio"` may precede an `AUDIO_CLIP` and can carry `urgent`
 
 Laptop → viewer (same socket as stats):
@@ -175,6 +191,8 @@ HTTP helpers (same laptop):
 
 - `POST /say` JSON `{"text":"...","urgent":false}` or raw text
 - `POST /play` raw audio body, `Content-Type` = mime
+- `POST /debug/proximity` `{"level":"danger"}` or `{"state":"unknown"}` — inject one proximity
+  message to test the phone's cues without the depth model
 - `GET /health`, `GET /`
 
 ---

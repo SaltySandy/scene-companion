@@ -6,6 +6,9 @@ __pycache__/
 .mypy_cache/
 *.egg-info/
 
+# Recorded walks: camera frames never leave the laptop.
+sessions/
+
 android/.gradle/
 android/.kotlin/
 android/build/
@@ -16,3 +19,6 @@ android/.idea/
 .DS_Store
 agent-tools/
 server/tests/artifacts/
+
+# Exported depth models (~100 MB): scripts/export_depth_onnx.py
+models/
