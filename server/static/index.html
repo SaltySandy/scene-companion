@@ -15,6 +15,7 @@
       --bad: #ff6b6b;
     }
     * { box-sizing: border-box; }
+    [hidden] { display: none !important; }
     html, body { margin: 0; height: 100%; background: var(--bg); color: var(--ink); font: 16px/1.45 ui-sans-serif, system-ui, sans-serif; }
     header { padding: 16px 20px 8px; display: flex; justify-content: space-between; align-items: baseline; gap: 12px; flex-wrap: wrap; }
     h1 { font-size: 1.15rem; margin: 0; letter-spacing: 0.02em; }
@@ -211,6 +212,9 @@
         $("fov").hidden = false;
         $("fovEmpty").hidden = true;
       } else if (!meta.has_jpeg) {
+        $("fov").removeAttribute("src");
+        $("fov").hidden = true;
+        $("fovEmpty").hidden = false;
         $("fovEmpty").textContent = meta.model
           ? "Waiting for a depth snapshot."
           : "No depth model loaded — ROI band is drawn on the live frame.";
