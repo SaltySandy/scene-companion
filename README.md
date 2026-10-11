@@ -29,6 +29,8 @@ Windows (PowerShell):
 
 Both create a `.venv`, install `server/requirements.txt`, and start uvicorn. On startup the server prints the laptop **LAN IP** and URLs. Default port is **8765**. If Snowflake or TigerData env vars are unset, each logs one line that it is disabled and the stream behaves as before.
 
+Speech-to-text is local faster-whisper on CPU (`int8`, no GPU). The model name is `WHISPER_MODEL` (default `base.en`). The first run downloads it from Hugging Face: **`base.en` is about 150 MB**. `tiny.en` is smaller if you want a quicker first start. `run_server.ps1` prints this before the server comes up.
+
 Open the viewer: [http://127.0.0.1:8765/](http://127.0.0.1:8765/)
 
 ### 2. Install the APK
@@ -49,9 +51,9 @@ Hackathon Wi-Fi is often a mess. USB forwarding just works:
 adb reverse tcp:8765 tcp:8765
 ```
 
-On the phone, set **Laptop address** to `127.0.0.1:8765` (the default). Double-tap the huge **Start** button.
+On the phone, set **Laptop address** to `127.0.0.1:8765` (the default). Double-tap the huge **Start** button. **Listen** (under Start) turns the mic on. It stays off until you tap it.
 
-TalkBack should hear **connected**. The laptop viewer should show frames. About every five seconds the demo stub speaks *“frame received, N per second”* on the phone.
+TalkBack should hear **connected**. The laptop viewer should show frames. About every five seconds the demo stub speaks *“frame received, N per second”* on the phone. With Listen on, a pause after speech shows a grey partial then a black final on the viewer, and the phone says *“You said: …”*.
 
 **Wi-Fi instead:** put `LAPTOP_LAN_IP:8765` in the address field (the IP printed at server startup). Phone and laptop must be on the same network; some guest Wi-Fi blocks device-to-device.
 
@@ -91,6 +93,15 @@ await play(wav_bytes, mime="audio/wav", urgent=True)
 
 A commented OpenAI-compatible / Gemini vision example lives in the same file. Keys are env vars (`OPENAI_API_KEY` or `GEMINI_API_KEY`); the demo stub runs with no key.
 
+Speech lands in the same module:
+
+```python
+async def on_transcript(text: str, is_final: bool, ts: int) -> None:
+    ...
+```
+
+The stub logs every partial and final. Finals are written to the event sinks and spoken back with `say(f"You said: {text}")`. Whisper runs on a background thread; the camera worker never waits on it.
+
 ---
 
 ## Protocol v1
@@ -129,7 +140,9 @@ If a frame is still on the phone’s outbound WebSocket queue, the next JPEG is 
 
 Every text message is `{"v":1,"type":"..."}`.
 
-Phone → laptop: `hello`, `config` (`width`, `height`, `fps`, `quality`, `mic`), `ping`.
+Phone → laptop: `hello`, `config` (`width`, `height`, `fps`, `quality`, `mic`), `ping`, `speaking`.
+
+`speaking` is half-duplex: `{"v":1,"type":"speaking","active":true}` while the phone is playing TTS or a clip. The server drops mic audio until that flag clears, plus a short tail. `say()` also mutes for about `0.45 + 0.05 * len(text)` seconds (capped at 8) so the speaker does not get transcribed before the phone flag arrives.
 
 Laptop → phone:
 
@@ -137,6 +150,11 @@ Laptop → phone:
 - `say` — `{"v":1,"type":"say","text":"...","urgent":false}` (Android TTS; lowest latency, works offline)
 - `pong`
 - `status` with `msg="audio"` may precede an `AUDIO_CLIP` and can carry `urgent`
+
+Laptop → viewer (same socket as stats):
+
+- `transcript` — `{"v":1,"type":"transcript","text":"...","final":false,"ts":1710000000000}`  
+  Partials are grey on the viewer page; finals are black, with a timestamp.
 
 HTTP helpers (same laptop):
 
@@ -151,7 +169,8 @@ HTTP helpers (same laptop):
 - minSdk 26, targetSdk 36, CameraX, one huge Start/Stop control, TalkBack labels, spoken status, haptic on connect/disconnect.
 - Defaults: ~640×480, 8 fps, JPEG quality 70. Frames are dropped, never queued.
 - Foreground service + wake lock so streaming survives the screen locking.
-- Mic uplink is **off by default**.
+- Mic uplink is **off by default**. Tap **Listen** (TalkBack: “Listen. Microphone streaming, off by default…”). It can be toggled while streaming. The mic stays off until half-duplex is confirmed on a device: the speaker plays TTS, so an always-on mic would transcribe the assistant.
+- Mic format is 16 kHz mono PCM16, sent in 100 ms chunks. `AudioRecord` uses `VOICE_COMMUNICATION`, and `AcousticEchoCanceler` is enabled when the device has it. While TTS or a clip is playing, the phone sends `speaking` and the server ignores the mic.
 - Server address is persisted.
 
 Build the debug APK (needs Android SDK):
@@ -216,12 +235,12 @@ python scripts/tiger_smoke.py
 - No on-device model. The AI is a stub plus a commented API example.
 - Phone and laptop clocks are not synced; “latency” on the viewer is `recv_ts - capture_ts` and can look wrong across Wi-Fi. Inter-frame time is the honest number.
 - Cleartext `ws://` only (hackathon LAN / USB). No TLS.
-- Mic chunks are accepted by the server and not processed.
-- Emulator camera is a fake scene if you use one; a real phone is the intended client.
+- Transcripts are English (`language="en"`) on CPU. The first `base.en` download is about 150 MB.
+- Emulator camera is a fake scene if you use one; a real phone is the intended client. The emulator also has to be checked before this build goes on a phone (see the report).
 - JPEG encode + rotate on the phone costs a few milliseconds per frame at 640×480.
 
 ## Top 3 next steps for the AI
 
 1. Uncomment / implement the vision call in `on_frame` and return short, hazard-first sentences (`Say`).
 2. Add a simple cooldown / change detector so you do not talk over the user every frame.
-3. Wire the optional mic into a speech-to-text question loop (`say` the answer, `urgent=True` if it is a hazard).
+3. Replace the `on_transcript` stub with a real question answer (`say` the answer, `urgent=True` if it is a hazard).

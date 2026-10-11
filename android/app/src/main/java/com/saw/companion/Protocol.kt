@@ -32,6 +32,8 @@ object Protocol {
     const val TYPE_STATUS = "status"
     const val TYPE_STATS = "stats"
     const val TYPE_MIC = "mic"
+    const val TYPE_SPEAKING = "speaking"
+    const val TYPE_TRANSCRIPT = "transcript"
     const val TYPE_ERROR = "error"
 
     data class BinaryMessage(

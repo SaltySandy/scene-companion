@@ -8,6 +8,7 @@ import android.content.IntentFilter
 import android.content.pm.PackageManager
 import android.os.Build
 import android.os.Bundle
+import android.content.res.ColorStateList
 import android.view.WindowManager
 import android.view.accessibility.AccessibilityEvent
 import android.view.accessibility.AccessibilityManager
@@ -34,9 +35,20 @@ class MainActivity : AppCompatActivity() {
         if (prefs.micEnabled && !hasMic()) {
             announce("Microphone permission denied. Streaming camera only.")
             prefs.micEnabled = false
-            binding.micToggle.isChecked = false
+            renderListen()
         }
         startStreaming()
+    }
+
+    private val micPermissionLauncher = registerForActivityResult(
+        ActivityResultContracts.RequestPermission(),
+    ) { granted ->
+        if (granted) {
+            applyListening(true)
+        } else {
+            announce("Microphone permission denied. Listening stays off.")
+            applyListening(false)
+        }
     }
 
     private val statusReceiver = object : BroadcastReceiver() {
@@ -54,15 +66,17 @@ class MainActivity : AppCompatActivity() {
         prefs = Prefs(this)
 
         binding.hostInput.setText(prefs.hostPort)
-        binding.micToggle.isChecked = prefs.micEnabled
+        renderListen()
 
         binding.hostInput.setOnFocusChangeListener { _, hasFocus ->
             if (!hasFocus) persistSettings()
         }
-        binding.micToggle.setOnCheckedChangeListener { _, checked ->
-            prefs.micEnabled = checked
-            if (checked && !hasMic() && StreamService.running) {
-                requestAndMaybeStart()
+        binding.listen.setOnClickListener {
+            val turnOn = !prefs.micEnabled
+            if (turnOn && !hasMic()) {
+                micPermissionLauncher.launch(Manifest.permission.RECORD_AUDIO)
+            } else {
+                applyListening(turnOn)
             }
         }
         binding.title.setOnLongClickListener {
@@ -99,7 +113,13 @@ class MainActivity : AppCompatActivity() {
 
     private fun persistSettings() {
         prefs.hostPort = binding.hostInput.text?.toString()?.ifBlank { Prefs.DEFAULT_HOST } ?: Prefs.DEFAULT_HOST
-        prefs.micEnabled = binding.micToggle.isChecked
+    }
+
+    private fun applyListening(enabled: Boolean) {
+        prefs.micEnabled = enabled
+        StreamService.instance?.setListening(enabled)
+        renderListen()
+        announce(if (enabled) getString(R.string.listen_on) else getString(R.string.listen_off))
     }
 
     private fun requestAndMaybeStart() {
@@ -131,7 +151,7 @@ class MainActivity : AppCompatActivity() {
         binding.startStop.contentDescription =
             if (running) getString(R.string.stop_streaming_cd) else getString(R.string.start_streaming_cd)
         binding.hostInput.isEnabled = !running
-        binding.micToggle.isEnabled = !running
+        renderListen()
         if (status != lastAnnounced && status.isNotBlank()) {
             lastAnnounced = status
             announce(status)
@@ -148,6 +168,16 @@ class MainActivity : AppCompatActivity() {
             ev.packageName = packageName
             am.sendAccessibilityEvent(ev)
         }
+    }
+
+    private fun renderListen() {
+        val on = prefs.micEnabled
+        binding.listen.text = getString(if (on) R.string.listen_on else R.string.listen_off)
+        binding.listen.contentDescription = getString(if (on) R.string.mic_on_cd else R.string.mic_cd)
+        binding.listen.backgroundTintList = ColorStateList.valueOf(
+            ContextCompat.getColor(this, if (on) R.color.accent else R.color.field),
+        )
+        binding.listen.setTextColor(ContextCompat.getColor(this, if (on) R.color.on_accent else R.color.ink))
     }
 
     private fun hasCamera(): Boolean =

@@ -76,6 +76,15 @@ class StreamClient(
         return ok
     }
 
+    fun sendSpeaking(active: Boolean) {
+        val ws = socketRef.get() ?: return
+        if (!connected) return
+        try {
+            ws.send(Protocol.encodeJson(Protocol.TYPE_SPEAKING, mapOf("active" to active)))
+        } catch (_: Exception) {
+        }
+    }
+
     fun sendMicPcm(pcm: ByteArray, timestampMs: Long): Boolean {
         val ws = socketRef.get() ?: return false
         if (!connected) return false

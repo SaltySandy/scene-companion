@@ -56,6 +56,8 @@ class MsgType:
     STATUS = "status"
     STATS = "stats"
     MIC = "mic"
+    SPEAKING = "speaking"
+    TRANSCRIPT = "transcript"
     ERROR = "error"
 
 

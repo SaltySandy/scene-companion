@@ -108,6 +108,25 @@ async def on_frame(jpeg_bytes: bytes, ts: int) -> Response:
     return None
 
 
+async def on_transcript(text: str, is_final: bool, ts: int) -> None:
+    """Question hook. ``text`` is a partial or final utterance. ``ts`` is capture time in ms.
+
+    The default stub proves the loop: finals are spoken back. Replace this
+    with the real assistant. Do not do slow work before the first await if
+    you can help it; the caller already runs off the camera thread.
+    """
+    import logging
+
+    logging.getLogger("saw.transcribe").info("transcript final=%s ts=%s: %s", is_final, ts, text)
+    if not is_final or not text.strip():
+        return
+    from server.event_sinks import sinks
+    from server.hub import say
+
+    sinks.log_event("transcript", text.strip(), meta={"ts": ts, "final": True})
+    await say(f"You said: {text.strip()}")
+
+
 def reset_demo_state() -> None:
     """Test helper."""
     global _last_announce

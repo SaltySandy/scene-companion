@@ -18,8 +18,10 @@ from sentry_sdk.integrations.asyncio import AsyncioIntegration
 from sentry_sdk.integrations.fastapi import FastApiIntegration
 
 from server import protocol as proto
+from server.ai_hook import on_transcript
 from server.event_sinks import sinks
 from server.hub import hub, play, say
+from server.transcribe import transcriber
 
 log = logging.getLogger("saw")
 STATIC_DIR = Path(__file__).resolve().parent / "static"
@@ -85,6 +87,8 @@ async def lifespan(_app: FastAPI):
     )
     hub.ensure_worker()
     sinks.start()
+    transcriber.bind(asyncio.get_running_loop(), _emit_transcript)
+    transcriber.start()
     ip = lan_ip()
     port = DEFAULT_PORT
     print()
@@ -99,6 +103,7 @@ async def lifespan(_app: FastAPI):
     print("=" * 60)
     print()
     yield
+    transcriber.stop()
     sinks.stop()
     if hub.worker_task:
         hub.worker_task.cancel()
@@ -262,6 +267,8 @@ async def _handle_phone_text(_ws: WebSocket, text: str) -> None:
         log.info("phone hello: %s", obj)
     elif kind == proto.MsgType.CONFIG:
         log.info("phone config: %s", obj)
+    elif kind == proto.MsgType.SPEAKING:
+        transcriber.set_phone_speaking(bool(obj.get("active", False)))
 
 
 async def _ws_safe_send_text(ws: WebSocket, text: str) -> None:
@@ -282,11 +289,18 @@ async def _handle_phone_bytes(data: bytes) -> None:
         hub.submit_frame(msg.payload, msg.timestamp_ms)
         await hub.broadcast_frame_to_viewers(msg.payload, msg.timestamp_ms, recv_ms)
     elif msg.kind == proto.Kind.MIC_PCM:
-        # Mic is accepted and ignored until the AI hook wants it.
-        # Viewers get a tiny stats nudge so the page can show "mic live".
+        # Enqueue only. Whisper runs on its own thread.
+        transcriber.push_pcm(msg.payload, msg.timestamp_ms)
         await hub._broadcast_viewers_text(
             proto.encode_json(proto.MsgType.MIC, enabled=True, bytes=len(msg.payload), t=msg.timestamp_ms)
         )
+
+
+async def _emit_transcript(text: str, is_final: bool, ts: int) -> None:
+    await hub._broadcast_viewers_text(
+        proto.encode_json(proto.MsgType.TRANSCRIPT, text=text, final=is_final, ts=ts)
+    )
+    await on_transcript(text, is_final, ts)
 
 
 @app.get("/debug/sentry")
