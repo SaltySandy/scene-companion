@@ -83,6 +83,15 @@ class StreamClient(
         return ok
     }
 
+    fun sendSpeaking(active: Boolean) {
+        val ws = socketRef.get() ?: return
+        if (!connected) return
+        try {
+            ws.send(Protocol.encodeJson(Protocol.TYPE_SPEAKING, mapOf("active" to active)))
+        } catch (_: Exception) {
+        }
+    }
+
     /** Tell the laptop when the cue for a frame started (phone clock). Tiny; sent best-effort. */
     fun sendAck(frameKey: Long, cueStartTs: Long, state: String) {
         if (!connected) return

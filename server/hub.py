@@ -133,6 +133,12 @@ class Hub:
         )
         log.info("say urgent=%s: %s", urgent, text)
         sinks.log_event("say", str(text).strip(), meta={"urgent": bool(urgent)})
+        try:
+            from server.transcribe import transcriber
+
+            transcriber.note_say(str(text).strip())
+        except Exception:
+            log.debug("speech mute failed", exc_info=True)
 
     async def send_proximity(
         self,

@@ -62,6 +62,9 @@
     .sectors div { background: #0b0d10; border-radius: 8px; padding: 6px 0; }
     .sectors small { display: block; color: var(--muted); font-size: 0.72rem; }
     .log { font: 12px/1.4 ui-monospace, monospace; color: var(--muted); max-height: 160px; overflow: auto; white-space: pre-wrap; }
+    .transcript { background: #f4f7fb; color: #111; border-radius: 8px; min-height: 96px; max-height: 180px; overflow: auto; padding: 8px; font-size: 0.95rem; }
+    .transcript .partial { color: #6b7280; }
+    .transcript .final { color: #111; font-weight: 650; }
   </style>
 </head>
 <body>
@@ -138,6 +141,10 @@
             <option value="tiger">tiger</option>
           </select>
         </div>
+      </div>
+      <div class="card">
+        <h2>Transcript</h2>
+        <div id="transcript" class="transcript" aria-live="polite"></div>
       </div>
       <div class="card">
         <h2>Log</h2>
@@ -270,6 +277,27 @@
         applyFovMeta(obj);
       } else if (obj.type === "mic") {
         log("mic chunk " + obj.bytes + " B");
+      } else if (obj.type === "transcript") {
+        const box = $("transcript");
+        const stamp = new Date(obj.ts || Date.now()).toLocaleTimeString();
+        if (obj.final) {
+          const pending = document.getElementById("partialLine");
+          if (pending) pending.remove();
+          const row = document.createElement("div");
+          row.className = "final";
+          row.textContent = stamp + "  " + obj.text;
+          box.appendChild(row);
+          box.scrollTop = box.scrollHeight;
+        } else {
+          let pending = document.getElementById("partialLine");
+          if (!pending) {
+            pending = document.createElement("div");
+            pending.id = "partialLine";
+            pending.className = "partial";
+            box.appendChild(pending);
+          }
+          pending.textContent = stamp + "  " + obj.text;
+        }
       }
     }
 

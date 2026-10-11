@@ -28,6 +28,10 @@ class SpeechQueue(context: Context) {
     private var mediaPlayer: MediaPlayer? = null
     private var audioTrack: AudioTrack? = null
     private var busy = false
+    private var speaking = false
+
+    /** True while TTS or a clip is playing, so the mic can be ignored. */
+    var onSpeakingChanged: ((Boolean) -> Unit)? = null
 
     private sealed class Item {
         data class Speak(val text: String) : Item()
@@ -113,6 +117,7 @@ class SpeechQueue(context: Context) {
             main.postDelayed({ pump() }, 150)
             return
         }
+        setSpeaking(true)
         val id = UUID.randomUUID().toString()
         val rc = engine.speak(text, TextToSpeech.QUEUE_FLUSH, null, id)
         if (rc != TextToSpeech.SUCCESS) {
@@ -141,6 +146,7 @@ class SpeechQueue(context: Context) {
                 true
             }
             player.prepare()
+            setSpeaking(true)
             player.start()
         } catch (_: Exception) {
             onItemFinished()
@@ -169,6 +175,7 @@ class SpeechQueue(context: Context) {
             AudioManager.AUDIO_SESSION_ID_GENERATE,
         )
         audioTrack = track
+        setSpeaking(true)
         track.write(pcm, 0, pcm.size)
         track.setNotificationMarkerPosition(pcm.size / 2)
         track.setPlaybackPositionUpdateListener(object : AudioTrack.OnPlaybackPositionUpdateListener {
@@ -205,6 +212,7 @@ class SpeechQueue(context: Context) {
         audioTrack?.release()
         audioTrack = null
         busy = false
+        setSpeaking(false)
     }
 
     private fun onItemFinished() {
@@ -219,7 +227,14 @@ class SpeechQueue(context: Context) {
         }
         audioTrack = null
         busy = false
+        if (queue.isEmpty()) setSpeaking(false)
         pump()
+    }
+
+    private fun setSpeaking(active: Boolean) {
+        if (speaking == active) return
+        speaking = active
+        onSpeakingChanged?.invoke(active)
     }
 
     private class ByteArrayDataSource(private val data: ByteArray) : MediaDataSource() {

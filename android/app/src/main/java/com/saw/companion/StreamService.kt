@@ -63,12 +63,27 @@ class StreamService : LifecycleService() {
             }
         })
         client = streamClient
+        speech.onSpeakingChanged = { active -> streamClient.sendSpeaking(active) }
         streamClient.start()
         camera = CameraStreamer(this, this, prefs, streamClient::readyToSend) { jpeg, ts ->
             streamClient.sendJpeg(jpeg, ts)
         }.also { it.start() }
         if (prefs.micEnabled) {
             mic = MicStreamer { pcm, ts -> streamClient.sendMicPcm(pcm, ts) }.also { it.start() }
+        }
+    }
+
+    fun setListening(enabled: Boolean) {
+        prefs.micEnabled = enabled
+        val streamClient = client
+        if (enabled && mic == null && streamClient != null) {
+            mic = MicStreamer { pcm, ts -> streamClient.sendMicPcm(pcm, ts) }.also { it.start() }
+        } else if (!enabled) {
+            mic?.stop()
+            mic = null
+        }
+        if (running) {
+            startInForeground()
         }
     }
 

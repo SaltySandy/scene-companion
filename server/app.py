@@ -18,9 +18,11 @@ from sentry_sdk.integrations.asyncio import AsyncioIntegration
 from sentry_sdk.integrations.fastapi import FastApiIntegration
 
 from server import protocol as proto
+from server.ai_hook import on_transcript
 from server.event_sinks import sinks
 from server import ai_hook
 from server.hub import hub, play, say
+from server.transcribe import transcriber
 
 log = logging.getLogger("saw")
 STATIC_DIR = Path(__file__).resolve().parent / "static"
@@ -87,6 +89,8 @@ async def lifespan(_app: FastAPI):
     depth_model = await asyncio.to_thread(ai_hook.warmup)
     hub.ensure_worker()
     sinks.start()
+    transcriber.bind(asyncio.get_running_loop(), _emit_transcript)
+    transcriber.start()
     hub.recorder.start()
     ip = lan_ip()
     port = DEFAULT_PORT
@@ -95,6 +99,7 @@ async def lifespan(_app: FastAPI):
     print("  SAW laptop server  (protocol v1)")
     print(f"  LAN IP : {ip}")
     print(f"  Phone  : ws://{ip}:{port}/v1/stream")
+    print(f"  Phone web: http://{ip}:{port}/phone")
     print(f"  Viewer : http://{ip}:{port}/")
     print(f"  USB    : adb reverse tcp:{port} tcp:{port}")
     print(f"           then phone host 127.0.0.1:{port}")
@@ -106,6 +111,7 @@ async def lifespan(_app: FastAPI):
     print("=" * 60)
     print()
     yield
+    transcriber.stop()
     sinks.stop()
     tasks = [t for t in (hub.worker_task, hub.clock_task, hub.fov_task) if t]
     for task in tasks:
@@ -121,6 +127,12 @@ app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
 @app.get("/", response_class=HTMLResponse)
 async def index() -> HTMLResponse:
     return HTMLResponse((STATIC_DIR / "index.html").read_text(encoding="utf-8"))
+
+
+@app.get("/phone", response_class=HTMLResponse)
+async def phone() -> HTMLResponse:
+    """Mobile web client (iPhone Safari / Android Chrome). Additive; not the laptop viewer."""
+    return HTMLResponse((STATIC_DIR / "phone" / "index.html").read_text(encoding="utf-8"))
 
 
 @app.get("/health")
@@ -293,6 +305,8 @@ async def _handle_phone_text(_ws: WebSocket, text: str) -> None:
     elif kind == proto.MsgType.CONFIG:
         hub.phone_config = {k: obj[k] for k in obj if k not in {"v", "type"}}
         log.info("phone config: %s", obj)
+    elif kind == proto.MsgType.SPEAKING:
+        transcriber.set_phone_speaking(bool(obj.get("active", False)))
 
 
 async def _ws_safe_send_text(ws: WebSocket, text: str) -> None:
@@ -313,11 +327,18 @@ async def _handle_phone_bytes(data: bytes) -> None:
         hub.submit_frame(msg.payload, msg.timestamp_ms, recv_ms)
         await hub.broadcast_frame_to_viewers(msg.payload, msg.timestamp_ms, recv_ms)
     elif msg.kind == proto.Kind.MIC_PCM:
-        # Mic is accepted and ignored until the AI hook wants it.
-        # Viewers get a tiny stats nudge so the page can show "mic live".
+        # Enqueue only. Whisper runs on its own thread.
+        transcriber.push_pcm(msg.payload, msg.timestamp_ms)
         await hub._broadcast_viewers_text(
             proto.encode_json(proto.MsgType.MIC, enabled=True, bytes=len(msg.payload), t=msg.timestamp_ms)
         )
+
+
+async def _emit_transcript(text: str, is_final: bool, ts: int) -> None:
+    payload = proto.encode_json(proto.MsgType.TRANSCRIPT, text=text, final=is_final, ts=ts)
+    await hub._broadcast_viewers_text(payload)
+    await hub._send_phone_text(payload)
+    await on_transcript(text, is_final, ts)
 
 
 @app.post("/debug/proximity")
