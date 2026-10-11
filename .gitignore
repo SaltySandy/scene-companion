@@ -15,4 +15,5 @@ android/.idea/
 *.iml
 .DS_Store
 agent-tools/
+server/tests/artifacts/
 server/traces/

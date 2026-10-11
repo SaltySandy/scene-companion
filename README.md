@@ -3,6 +3,7 @@
 Hackathon skeleton for an AI-assisted situational-awareness tool. The **phone is the eyes and ears**. The **AI runs on a laptop**. This repo is the plumbing: Android camera/mic uplink, laptop live viewer, and a single hook where the model goes.
 
 - **Android app** (`android/`): CameraX rear-camera JPEG stream over WebSocket, TTS + clip playback, optional mic, TalkBack-first UI.
+- **Phone web app** (`server/static/phone/`): same live path in Safari / Chrome, no APK. Open `/phone` on the laptop server. **iPhone setup:** [docs/IPHONE.md](docs/IPHONE.md).
 - **Laptop server** (`server/`): FastAPI WebSocket + a local web page showing the live feed. Put vision logic in `server/ai_hook.py`.
 
 Protocol version: **v1**.
@@ -30,6 +31,8 @@ Windows (PowerShell):
 Both create a `.venv`, install `server/requirements.txt`, and start uvicorn. On startup the server prints the laptop **LAN IP** and URLs. Default port is **8765**. If Snowflake or TigerData env vars are unset, each logs one line that it is disabled and the stream behaves as before.
 
 Open the viewer: [http://127.0.0.1:8765/](http://127.0.0.1:8765/)
+
+Desktop browser test of the phone client (no HTTPS needed): [http://127.0.0.1:8765/phone](http://127.0.0.1:8765/phone). iPhone Safari needs HTTPS — follow **[Use on iPhone](docs/IPHONE.md)**.
 
 ### 2. Install the APK
 
@@ -64,6 +67,18 @@ curl -X POST http://127.0.0.1:8765/say \
 ```
 
 Or type in the viewer text box. A scripted fake phone is in `server/tests/fake_client.py`.
+
+---
+
+## Use on iPhone
+
+**Full setup: [docs/IPHONE.md](docs/IPHONE.md).** Short version:
+
+1. On the laptop: `.\run_server.ps1` (or `$env:SAW_PORT = "8767"; .\run_server.ps1`).
+2. HTTPS in front, same port: `.\serve_phone.ps1` or `.\serve_phone.ps1 -Port 8767`. That runs `tailscale serve --bg --https=443 http://127.0.0.1:<port>` (tailnet-only). Fallback: `.\serve_phone.ps1 -Mode cloudflare`.
+3. iPhone: Tailscale app, same tailnet, Safari → `https://<laptop-magicdns>/phone`, tap **Start**, allow camera.
+
+iOS Safari only grants camera, mic, and motion in a secure context. Plain `http://LAN_IP` will not get a camera. One phone per server. Turn Serve off with `tailscale serve --https=443 off`.
 
 ---
 
@@ -224,6 +239,16 @@ pip install -r server/requirements.txt
 PYTHONPATH=. python -m pytest server/tests -q
 ```
 
+Phone web client (protocol + Playwright with Chromium’s fake camera):
+
+```bash
+pip install -r server/requirements-web.txt
+python -m playwright install chromium
+PYTHONPATH=. python -m pytest server/tests/test_phone_page.py server/tests/test_phone_protocol.py server/tests/test_phone_compat.py server/tests/test_phone_web.py -q
+```
+
+`test_phone_compat.py` boots the servers from `feat/proximity` and `cursor/proximity-warning-977b` in git worktrees (or a dialect stub if a branch will not start) and drives the same JS protocol the browser uses.
+
 ---
 
 ## Error monitoring
@@ -267,7 +292,7 @@ python scripts/tiger_smoke.py
 - Assumed obstacle width (0.6 m) is a prior. A wall that fills the frame is forced near; a thin pole can read far.
 - Clock **offset** is min-RTT NTP and is biased by uplink/downlink asymmetry (typical on a cellular tunnel). The warning does **not** use that offset for e2e; it uses phone-clock capture → TTS start.
 - Before the first few `tts_start` reports, remaining latency is the 250 ms default.
-- Cleartext `ws://` only on LAN / USB. Tunnel URLs use `wss://` (see the address field). No auth on the socket.
+- Cleartext `ws://` only on LAN / USB. Tunnel URLs use `wss://` (see the address field). No auth on the socket. The `/phone` web client uses `wss://` when the page itself is HTTPS (Tailscale serve/funnel or a Cloudflare tunnel).
 - Mic chunks are accepted by the server and not processed.
 - Emulator camera is a fake scene if you use one; a real phone is the intended client.
 - JPEG encode + rotate on the phone costs a few milliseconds per frame at 640×480.
