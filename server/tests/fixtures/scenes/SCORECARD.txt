@@ -1,36 +1,16 @@
 Scene Companion replay scorecard
-Generated on this branch against current main (no proximity) and a live
-PR #6 worktree server (Brian's proximity heartbeat, depth model not exported).
+After merging current main (c4bc21d, Brian's proximity + /phone + FoV)
+into this branch. Navigator = baseline (color stub). Scenes are synthetic,
+AI-generated photos of one room.
 
-Scenes are synthetic, AI-generated photos of one room. Navigator = baseline
-(color stub). Columns are exact-match vs structured ground truth. prox is
-Brian's heartbeat (n/a on main; unknown/0% on PR #6 without the ONNX model).
+Columns are exact-match vs structured ground truth. prox is Brian's
+heartbeat. Depth ONNX is not on this VM (Depth: MISSING), so every
+proximity reading is state=unknown and scores 0 — not skipped: silence
+must never mean "clear".
 
 ================================================================================
-1) Baseline, in-process (main)
+1) Baseline, in-process (merged main + harness)
    python scripts/replay_scenes.py
-================================================================================
-scene                         vis bear dist obst near stop  arr  utt  nav prox
-------------------------------------------------------------------------------
-01_entry_overview               Y    Y    Y    Y    Y    Y    Y    Y 100%  n/a
-02_chair_blocking               Y    Y    .    Y    Y    Y    Y  0.7  83%  n/a
-03_exit_at_right_edge           .    Y    Y    Y    .    Y    Y    Y  75%  n/a
-04_arrived_at_exit              Y    Y    Y    Y    Y    Y    Y    Y 100%  n/a
-05_low_light                    Y    Y    .    Y    .    .    Y  0.5  56%  n/a
-06_plain_wall_close             Y    Y    Y    Y    Y    Y    Y    Y 100%  n/a
-07_motion_blur_partial_chair    .    Y    .    Y    Y    Y    Y    Y  75%  n/a
-08_exit_not_visible             Y    .    Y    Y    Y    Y    Y    Y  88%  n/a
-------------------------------------------------------------------------------
-field avg / overall           0.8  0.9  0.6    Y  0.8  0.9    Y  0.9  85%  n/a
-
-Overall nav 84.6%   proximity n/a   navigator=baseline mode=inprocess
-Sequence 01 → 02 → 04: nav 94.5%  continuity 100%
-
-================================================================================
-2) Same frames as a fake phone against PR #6 (ws://127.0.0.1:18780/v1/stream)
-   python scripts/replay_scenes.py --url http://127.0.0.1:8765
-   Depth: MISSING — every proximity heartbeat is state=unknown (sensor lost).
-   That is scored 0, not skipped: silence must never mean "clear".
 ================================================================================
 scene                         vis bear dist obst near stop  arr  utt  nav prox
 ------------------------------------------------------------------------------
@@ -45,12 +25,31 @@ scene                         vis bear dist obst near stop  arr  utt  nav prox
 ------------------------------------------------------------------------------
 field avg / overall           0.8  0.9  0.6    Y  0.8  0.9    Y  0.9  85%   0%
 
-Overall nav 84.6%   proximity 0%   navigator=baseline mode=websocket-url
+Overall nav 84.6%   proximity 0%   navigator=baseline mode=inprocess
 Sequence 01 → 02 → 04: nav 94.5%  continuity 100%
 
-Expected proximity levels (Brian's defaults, danger < 0.8 m, near < 1.6 m):
+================================================================================
+2) Same frames as a fake phone against this branch (websocket mode)
+   python scripts/replay_scenes.py --mode websocket
+   Depth: MISSING — every proximity heartbeat is state=unknown (sensor lost).
+================================================================================
+scene                         vis bear dist obst near stop  arr  utt  nav prox
+------------------------------------------------------------------------------
+01_entry_overview               Y    Y    Y    Y    Y    Y    Y    Y 100%    .
+02_chair_blocking               Y    Y    .    Y    Y    Y    Y  0.7  83%    .
+03_exit_at_right_edge           .    Y    Y    Y    .    Y    Y    Y  75%    .
+04_arrived_at_exit              Y    Y    Y    Y    Y    Y    Y    Y 100%    .
+05_low_light                    Y    Y    .    Y    .    .    Y  0.5  56%    .
+06_plain_wall_close             Y    Y    Y    Y    Y    Y    Y    Y 100%    .
+07_motion_blur_partial_chair    .    Y    .    Y    Y    Y    Y    Y  75%    .
+08_exit_not_visible             Y    .    Y    Y    Y    Y    Y    Y  88%    .
+------------------------------------------------------------------------------
+field avg / overall           0.8  0.9  0.6    Y  0.8  0.9    Y  0.9  85%   0%
+
+Overall nav 84.6%   proximity 0%   navigator=baseline mode=websocket
+Sequence 01 → 02 → 04: nav 94.5%  continuity 100%
+
+Expected proximity levels once `scripts/export_depth_onnx.py` has been run
+(Brian's defaults, danger < 0.8 m, near < 1.6 m):
   01 clear   02 danger   03 clear   04 near
   05 clear   06 danger   07 near    08 near
-
-After `scripts/export_depth_onnx.py` and a rebase onto PR #6, rerun --url
-and the prox column should fill with real levels.
