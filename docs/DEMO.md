@@ -20,9 +20,10 @@ With earbuds, beeps pan toward the side with the closer obstacle. A short phrase
 
 1. The spotter stays within arm's reach, on the walker's side, for the whole walk.
 2. The stop word is **"stop"**. It beats any tone. The walker freezes at once.
-3. Route: indoors, flat, no stairs, no glass walls or mirrors, cleared of low clutter.
-   The chest camera cannot see objects within about 1 m of the feet, and depth models
-   misread glass and mirrors.
+3. Route: indoors, flat, no stairs, no glass walls or mirrors. Chairs, bags, and boxes on
+   the floor are detected from about 1 m out (with the phone tilted down a little); flat
+   things such as cables, rugs, and mats are not, and nothing within about 1 m of the feet
+   is in view. Depth models also misread glass and mirrors.
 4. Walk slowly. "Sensor lost" means stop and wait. Two losses in one walk ends the walk.
 5. Only run a walk after `scripts/preflight.py` prints GO.
 
@@ -46,8 +47,10 @@ adb install -r app/build/outputs/apk/debug/app-debug.apk
 ```
 
 Mount: phone **upright in portrait** on the chest strap, rear camera facing forward,
-level, lens unobstructed. Upright frames matter: a sideways phone swaps left/right with
-up/down. Other mounts need the `mount_rotation` pref (0/90/180/270).
+**tilted down about 10–15°**, lens unobstructed. Upright frames matter: a sideways phone
+swaps left/right with up/down. Other mounts need the `mount_rotation` pref (0/90/180/270).
+The tilt lets the camera see the floor about 1 m ahead (level, it starts near 2 m), which
+is where chairs and bags are caught. Much more tilt loses head-height obstacles.
 
 ## Before each walk (5 minutes)
 
@@ -58,8 +61,9 @@ up/down. Other mounts need the `mount_rotation` pref (0/90/180/270).
 3. Start the app, strap it on, and wait for "connected" and then "sensor on".
 4. Run `python scripts/preflight.py`. It needs **GO**.
 5. Tone check, eyes open: walk toward a wall and listen for tick, then beeps, then the
-   continuous tone. Cover the lens with a hand: the levels jump. Unplug USB or stop the
-   server: "sensor lost" within about a second.
+   continuous tone. Put a chair in the path and walk up to it: beeps should start about
+   1.6 m out, and the viewer's depth view paints it magenta. Cover the lens with a hand:
+   the levels jump. Unplug USB or stop the server: "sensor lost" within about a second.
 6. Open `http://127.0.0.1:8765/` for the audience. The badge shows what the walker hears.
 
 ## Rehearse and tune (between walks)
@@ -83,7 +87,8 @@ and people. Spot-check labels in `labels.jsonl` before trusting a threshold.
 | Preflight: longest gap or rate FAIL | Use USB (`adb reverse`); hackathon Wi-Fi drops frames |
 | Frame age WARN (> 300 ms) | Close other apps on the laptop; lower phone fps |
 | Clock sync / camera-to-cue WARN | Phone runs an old APK; reinstall the current build |
-| Constant "near" in open space | The floor is in the band: tilt the phone up, or lower `SAW_ROI_BOTTOM` |
+| Constant "near" in open space | Open the viewer's depth view. Magenta on bare floor: raise `SAW_FLOOR_MARGIN` to 0.3, or `SAW_FLOOR=0` for band only. Floor inside the yellow band: tilt the phone up a little |
+| Chair not detected | Tilt the phone down a little more; the depth view should show the floor inside the cyan box and the chair in magenta. Caption "no floor in view" means the fit failed |
 | No obstacle names | Set `ANTHROPIC_API_KEY`; the server log says "describe disabled" |
 
 ## Settings (env vars on the server)
@@ -93,6 +98,10 @@ and people. Spot-check labels in `labels.jsonl` before trusting a threshold.
 | `SAW_NEAR_M` / `SAW_DANGER_M` | 1.6 / 0.8 | Level thresholds in metres |
 | `SAW_ROI_TOP` / `SAW_ROI_BOTTOM` | 0.15 / 0.75 | Image band used (fraction of height) |
 | `SAW_SECTOR_PERCENTILE` | 10 | Depth percentile per sector |
+| `SAW_FLOOR` | 1 | 0 turns off floor-obstacle detection (chairs, bags) |
+| `SAW_FLOOR_TOP` | 0.55 | Floor search starts here (fraction of height) |
+| `SAW_FLOOR_MARGIN` | 0.2 | How much nearer than the floor counts as an obstacle |
+| `SAW_FLOOR_MIN_FRAC` | 0.02 | Smallest floor blob that counts (share of the sector) |
 | `SAW_STALE_MS` | 700 | Older frames are sent as unknown |
 | `SAW_RECORD` / `SAW_RECORD_JPEG` | off / on | Record `sessions/<id>/` |
 | `SAW_PROXIMITY` | 1 | 0 turns the sensor off (for `/debug/proximity` tests) |

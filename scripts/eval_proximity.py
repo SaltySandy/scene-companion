@@ -30,7 +30,7 @@ import numpy as np
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from server.ai.proximity import SECTORS, SEVERITY, ProximityConfig, level_for, sector_distances  # noqa: E402
+from server.ai.proximity import SECTORS, SEVERITY, ProximityConfig, combined_distances, level_for  # noqa: E402
 
 FALSE_CLEAR_WEIGHT = 5.0
 MIN_POSITIVES = 30  # fewer near/danger examples than this cannot tune anything
@@ -40,6 +40,7 @@ GRID = {
     "percentile": [5.0, 10.0, 20.0],
     "near_m": [round(x, 1) for x in np.arange(1.2, 2.61, 0.2)],
     "danger_m": [0.6, 0.8, 1.0, 1.2],
+    "floor_margin": [0.15, 0.2, 0.3],
 }
 
 
@@ -91,13 +92,18 @@ def sweep(
     depths: list[np.ndarray], truth: list[dict[str, float]], truth_cfg: ProximityConfig, grid: dict[str, list] = GRID
 ) -> list[dict[str, Any]]:
     results = []
-    for top, bottom, pct in itertools.product(grid["roi_top"], grid["roi_bottom"], grid["percentile"]):
-        band = ProximityConfig(roi_top=top, roi_bottom=bottom, percentile=pct)
-        predicted = [sector_distances(d, band) for d in depths]  # once per band
+    for top, bottom, pct, margin in itertools.product(
+        grid["roi_top"], grid["roi_bottom"], grid["percentile"], grid["floor_margin"]
+    ):
+        band = ProximityConfig(roi_top=top, roi_bottom=bottom, percentile=pct, floor_margin=margin)
+        # Band plus floor obstacles, once per band; thresholds below only relabel these.
+        predicted = [combined_distances(d, band).sectors_m for d in depths]
         for near, danger in itertools.product(grid["near_m"], grid["danger_m"]):
             if danger >= near:
                 continue
-            cfg = ProximityConfig(roi_top=top, roi_bottom=bottom, percentile=pct, near_m=near, danger_m=danger)
+            cfg = ProximityConfig(
+                roi_top=top, roi_bottom=bottom, percentile=pct, near_m=near, danger_m=danger, floor_margin=margin
+            )
             results.append({"config": asdict(cfg), **score(predicted, truth, cfg, truth_cfg)})
     # On a tie, warn earlier: higher thresholds and a lower percentile are the cautious side.
     results.sort(
@@ -133,7 +139,8 @@ def collect(session_dirs: list[Path]) -> tuple[list[np.ndarray], list[dict[str, 
 def env_line(cfg: dict[str, float]) -> str:
     return (
         f"SAW_ROI_TOP={cfg['roi_top']} SAW_ROI_BOTTOM={cfg['roi_bottom']} "
-        f"SAW_SECTOR_PERCENTILE={cfg['percentile']:g} SAW_NEAR_M={cfg['near_m']} SAW_DANGER_M={cfg['danger_m']}"
+        f"SAW_SECTOR_PERCENTILE={cfg['percentile']:g} SAW_NEAR_M={cfg['near_m']} SAW_DANGER_M={cfg['danger_m']} "
+        f"SAW_FLOOR_MARGIN={cfg['floor_margin']:g}"
     )
 
 
@@ -150,7 +157,7 @@ def main(argv: list[str] | None = None) -> int:
     if not depths:
         raise SystemExit("no labeled frames with JPEGs found")
     current = ProximityConfig.from_env()
-    baseline = score([sector_distances(d, current) for d in depths], truth, current, truth_cfg)
+    baseline = score([combined_distances(d, current).sectors_m for d in depths], truth, current, truth_cfg)
     ranked = sweep(depths, truth, truth_cfg)
     if args.json:
         print(json.dumps({"current": {"config": asdict(current), **baseline}, "ranked": ranked[: args.top]}, indent=2))
@@ -160,7 +167,10 @@ def main(argv: list[str] | None = None) -> int:
     rows = [("current", {"config": asdict(current), **baseline})] + [(f"#{i + 1}", r) for i, r in enumerate(ranked[: args.top])]
     for name, r in rows:
         c = r["config"]
-        desc = f"{name:<8} band {c['roi_top']:.2f}-{c['roi_bottom']:.2f} p{c['percentile']:<4g} near<{c['near_m']} danger<{c['danger_m']}"
+        desc = (
+            f"{name:<8} band {c['roi_top']:.2f}-{c['roi_bottom']:.2f} p{c['percentile']:<4g} "
+            f"near<{c['near_m']} danger<{c['danger_m']} floor+{c['floor_margin']:g}"
+        )
         print(f"{desc:<56} {r['false_clear_rate']:>10.1%} {r['false_alarm_rate']:>12.1%} {r['level_accuracy']:>9.1%} {r['distance_mae_m']:>6.2f}")
     if baseline["positives"] < MIN_POSITIVES:
         print(

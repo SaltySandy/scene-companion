@@ -16,6 +16,8 @@ from server.ai.proximity import SECTORS, Proximity, ProximityConfig
 
 # Far end of the colour scale (metres). Closer than this is warmer.
 VMAX_M = 5.0
+FLOOR_OUTLINE = (61, 214, 214)
+FLOOR_HIT = np.array((255, 0, 255), dtype=np.float32)  # pixels standing on the floor
 LEVEL_RGB = {
     "clear": (61, 214, 140),
     "near": (245, 197, 66),
@@ -62,10 +64,17 @@ def render_fov(
     y1 = max(int(h * cfg.roi_bottom), y0 + 1)
     edges = sector_edges(w)
 
+    fit = result.floor_fit
     rgb = colorize_depth(depth)
     outside = np.ones((h, w, 1), dtype=np.float32)
     outside[y0:y1, :] = 0.0
-    rgb = (rgb.astype(np.float32) * (1.0 - 0.72 * outside)).astype(np.uint8)
+    if fit is not None:
+        outside[fit.top : fit.bottom, :] = 0.0  # the floor search region is live too
+    shaded = rgb.astype(np.float32) * (1.0 - 0.72 * outside)
+    if result.floor_mask is not None:
+        hit = result.floor_mask
+        shaded[hit] = 0.35 * shaded[hit] + 0.65 * FLOOR_HIT
+    rgb = shaded.astype(np.uint8)
 
     # Draw at a readable size; the model input is typically 350x266.
     scale = 2 if max(h, w) < 500 else 1
@@ -82,6 +91,8 @@ def render_fov(
     def sy(y: float) -> int:
         return int(round(y * scale))
 
+    if fit is not None:
+        draw.rectangle([sx(0), sy(fit.top), sx(w) - 1, sy(fit.bottom) - 1], outline=FLOOR_OUTLINE, width=1)
     draw.rectangle([sx(0), sy(y0), sx(w) - 1, sy(y1) - 1], outline=(245, 197, 66), width=2)
     for x in edges[1:-1]:
         draw.line([(sx(x), sy(y0)), (sx(x), sy(y1) - 1)], fill=(232, 237, 244), width=1)
@@ -107,12 +118,16 @@ def render_fov(
     if model_name:
         note = f"{model_name}  {note}"
     draw.text((8, img.height + 8), note, fill=(147, 160, 179), font=font)
-    draw.text(
-        (8, img.height + 28),
-        "upright input (phone applies mount_rotation before encode)",
-        fill=(147, 160, 179),
-        font=font,
-    )
+    if not cfg.floor:
+        floor_note = "floor obstacles: off (SAW_FLOOR=0)"
+    elif fit is None:
+        floor_note = "floor obstacles: no floor in view, band only"
+    else:
+        floor_note = (
+            f"floor obstacles (magenta): margin {cfg.floor_margin:g}, "
+            f"{fit.inlier_frac:.0%} of region on the floor plane"
+        )
+    draw.text((8, img.height + 28), floor_note, fill=FLOOR_OUTLINE, font=font)
 
     buf = io.BytesIO()
     canvas.save(buf, format="JPEG", quality=70)
@@ -130,6 +145,13 @@ def render_fov(
         "model": model_name,
         "mount_rotation": "phone",
         "sector_edges": edges,
+        "floor": cfg.floor,
+        "floor_margin": cfg.floor_margin,
+        "floor_top": fit.top if fit else None,
+        "floor_bottom": fit.bottom if fit else None,
+        "floor_inliers": round(fit.inlier_frac, 3) if fit else None,
+        "floor_m": dict(result.floor_m) if result.floor_m else None,
+        "band_m": dict(result.band_m) if result.band_m else None,
     }
     if extra:
         meta.update(extra)

@@ -40,6 +40,7 @@ FLOOR_MAX_ROLL = 0.5  # |a| <= 0.5 * b: about 27 degrees of roll; side walls fai
 FLOOR_STRIDE = 3  # sample every 3rd pixel each way for the fit
 FLOOR_ITERS = 120
 FLOOR_BEHIND_WEIGHT = 5.0  # each pixel behind a candidate floor cancels this many inliers
+FLOOR_MIN_GROWTH = 1.25  # floor inverse depth must rise >= 25% from top to bottom of the region
 
 
 @dataclass(frozen=True)
@@ -118,8 +119,40 @@ def sector_distances(depth: np.ndarray, cfg: ProximityConfig) -> dict[str, float
     return out
 
 
-def _plane_ok(a: float, b: float) -> bool:
-    return b > 0 and abs(a) <= FLOOR_MAX_ROLL * b
+def _plane_ok(a, b, c, top: int, bottom: int, width: int):
+    """Floor-shaped: nearer toward the bottom, not rolled like a side wall, and in front.
+
+    Works on scalars or arrays of candidate planes. A wall straight ahead has
+    nearly constant inverse depth down the frame, so it fails the growth test.
+    """
+    mid = width / 2
+    at_top = a * mid + b * top + c
+    at_bottom = a * mid + b * bottom + c
+    return (b > 0) & (np.abs(a) <= FLOOR_MAX_ROLL * b) & (at_top > 0) & (at_bottom >= FLOOR_MIN_GROWTH * at_top)
+
+
+def _solve3(m: np.ndarray, rhs: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
+    """Batched 3x3 solve by Cramer's rule. Returns (solutions (k, 3), solvable mask (k,)).
+
+    Plain elementwise numpy on purpose: BLAS/LAPACK threads busy-wait after each call
+    and slow the next depth inference on the same cores. These systems are tiny.
+    """
+
+    def det(x: np.ndarray) -> np.ndarray:
+        return (
+            x[:, 0, 0] * (x[:, 1, 1] * x[:, 2, 2] - x[:, 1, 2] * x[:, 2, 1])
+            - x[:, 0, 1] * (x[:, 1, 0] * x[:, 2, 2] - x[:, 1, 2] * x[:, 2, 0])
+            + x[:, 0, 2] * (x[:, 1, 0] * x[:, 2, 1] - x[:, 1, 1] * x[:, 2, 0])
+        )
+
+    d = det(m)
+    ok = np.abs(d) > 1e-12
+    out = np.zeros((m.shape[0], 3))
+    for col in range(3):
+        swapped = m.copy()
+        swapped[:, :, col] = rhs
+        out[:, col] = det(swapped) / np.where(ok, d, 1.0)
+    return out, ok
 
 
 def fit_floor(depth: np.ndarray, cfg: ProximityConfig) -> FloorFit | None:
@@ -133,33 +166,35 @@ def fit_floor(depth: np.ndarray, cfg: ProximityConfig) -> FloorFit | None:
     if ok.sum() < 30:
         return None
     u, v, y = cols[ok].astype(np.float64), rows[ok].astype(np.float64), 1.0 / z[ok]
-    design = np.column_stack([u, v, np.ones_like(u)])
-    # Score every candidate plane at once: (pixels x candidates) in one matrix product.
+    # Score every candidate plane at once: (pixels x candidates), elementwise.
     rng = np.random.default_rng(0)  # deterministic: same frame, same answer
     picks = np.stack([rng.choice(y.size, 3, replace=False) for _ in range(FLOOR_ITERS)])
-    systems, targets = design[picks], y[picks]
-    solvable = np.abs(np.linalg.det(systems)) > 1e-12
-    if not solvable.any():
-        return None
-    planes = np.linalg.solve(systems[solvable], targets[solvable][..., None])[..., 0]  # (k, 3)
-    a, b = planes[:, 0], planes[:, 1]
-    planes = planes[(b > 0) & (np.abs(a) <= FLOOR_MAX_ROLL * b)]
+    systems = np.stack([u[picks], v[picks], np.ones(picks.shape)], axis=-1)  # (k, 3, 3)
+    planes, solvable = _solve3(systems, y[picks])
+    planes = planes[solvable]
+    planes = planes[_plane_ok(planes[:, 0], planes[:, 1], planes[:, 2], top, bottom, w)]
     if planes.size == 0:
         return None
-    pred = design @ planes.T  # (n, k)
+    pred = u[:, None] * planes[:, 0] + v[:, None] * planes[:, 1] + planes[:, 2]  # (n, k)
     rel = (y[:, None] - pred) / np.maximum(np.abs(pred), 1e-6)
     inliers = np.abs(rel) <= FLOOR_TOL
     # The floor is the farthest surface: pixels well behind a candidate count against it,
     # so a chair seat or the front of an armchair cannot pass for the floor.
     behind = rel < -2 * FLOOR_TOL
     score = inliers.sum(axis=0) - FLOOR_BEHIND_WEIGHT * behind.sum(axis=0)
-    score[np.median(pred, axis=0) <= 0] = -np.inf
     best = int(np.argmax(score))
     best_inliers = inliers[:, best] if np.isfinite(score[best]) else None
     if best_inliers is None or best_inliers.sum() < FLOOR_MIN_INLIERS * y.size:
         return None
-    (a, b, c), *_ = np.linalg.lstsq(design[best_inliers], y[best_inliers], rcond=None)
-    if not _plane_ok(a, b):
+    # Least-squares refit on the inliers via the 3x3 normal equations.
+    iu, iv, iy = u[best_inliers], v[best_inliers], y[best_inliers]
+    n = float(iu.size)
+    normal = np.array([[[iu @ iu, iu @ iv, iu.sum()], [iu @ iv, iv @ iv, iv.sum()], [iu.sum(), iv.sum(), n]]])
+    solution, solved = _solve3(normal, np.array([[iu @ iy, iv @ iy, iy.sum()]]))
+    if not solved[0]:
+        return None
+    a, b, c = solution[0]
+    if not _plane_ok(a, b, c, top, bottom, w):
         return None
     return FloorFit(top, bottom, float(a), float(b), float(c), float(best_inliers.mean()))
 

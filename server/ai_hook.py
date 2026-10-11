@@ -141,6 +141,9 @@ def fov_params() -> dict[str, Any]:
         "percentile": cfg.percentile,
         "near_m": cfg.near_m,
         "danger_m": cfg.danger_m,
+        "floor": cfg.floor,
+        "floor_top": cfg.floor_top,
+        "floor_margin": cfg.floor_margin,
         "depth_height": getattr(_model, "height", None),
         "depth_width": getattr(_model, "width", None),
         "model": getattr(_model, "name", None),
@@ -154,6 +157,7 @@ def fov_params() -> dict[str, Any]:
         params["sectors_m"] = dict(result.sectors_m)
         params["levels"] = dict(result.levels)
         params["level"] = result.level
+        params["floor_m"] = dict(result.floor_m) if result.floor_m else None
         params["depth_height"] = int(_depth.shape[0])
         params["depth_width"] = int(_depth.shape[1])
         if name:
