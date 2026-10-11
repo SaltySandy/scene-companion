@@ -1,0 +1,153 @@
+{
+  "_status": "EYEBALLED / UNREVIEWED DRAFT - not ground truth. DRAFT, not ground truth. Boxes hand-labelled by eye on the 640x480 fixtures (grid overlay, ~5-10 px precision) by the agent on 2026-10-11; nobody has reviewed them. Turn/side fields are transcribed from the existing manifest utterances, not new judgements.",
+  "frame": [
+    640,
+    480
+  ],
+  "camera": {
+    "hfov_deg": null,
+    "hfov_deg_assumed_for_scoring": 66.0,
+    "note": "synthetic AI images; true FOV unknown. Prefer pixel-space metrics."
+  },
+  "fields": {
+    "exit_box": "[x0,y0,x1,y1] door slab incl. frame of the door under the EXIT sign; null if not visible. Cropped at the frame edge if partial.",
+    "exit_sign_box": "[x0,y0,x1,y1] lit EXIT sign; null if not visible",
+    "non_exit_doors": "doors/doorways with no EXIT sign that must NOT be called the exit",
+    "path_first_turn": "left | right | straight | any | none (none = no path should be planned: stop or scan)",
+    "obstacle_side": "side of the user the nearest obstacle is on (left|right|center|none), from the manifest utterance"
+  },
+  "scenes": {
+    "01_entry_overview": {
+      "exit_box": [
+        492,
+        97,
+        581,
+        272
+      ],
+      "exit_sign_box": [
+        523,
+        66,
+        553,
+        84
+      ],
+      "non_exit_doors": [],
+      "path_first_turn": "any",
+      "obstacle_side": "right",
+      "from_manifest": "Chair ahead on your right, keep left of it."
+    },
+    "02_chair_blocking": {
+      "exit_box": [
+        382,
+        82,
+        478,
+        278
+      ],
+      "exit_sign_box": [
+        413,
+        46,
+        444,
+        66
+      ],
+      "non_exit_doors": [],
+      "path_first_turn": "right",
+      "obstacle_side": "center",
+      "from_manifest": "Stop. Chair directly ahead. Step right"
+    },
+    "03_exit_at_right_edge": {
+      "exit_box": [
+        567,
+        77,
+        640,
+        278
+      ],
+      "exit_sign_box": [
+        613,
+        38,
+        640,
+        58
+      ],
+      "non_exit_doors": [],
+      "path_first_turn": "right",
+      "obstacle_side": "none",
+      "from_manifest": "Exit is to your right. Turn right."
+    },
+    "04_arrived_at_exit": {
+      "exit_box": [
+        232,
+        67,
+        402,
+        415
+      ],
+      "exit_sign_box": [
+        292,
+        3,
+        343,
+        36
+      ],
+      "non_exit_doors": [],
+      "path_first_turn": "straight",
+      "obstacle_side": "none",
+      "from_manifest": "You have reached the exit door."
+    },
+    "05_low_light": {
+      "exit_box": [
+        492,
+        97,
+        581,
+        272
+      ],
+      "exit_sign_box": [
+        523,
+        66,
+        553,
+        84
+      ],
+      "non_exit_doors": [],
+      "path_first_turn": "any",
+      "obstacle_side": "right",
+      "from_manifest": "Chair ahead on your right, keep left of it."
+    },
+    "06_plain_wall_close": {
+      "exit_box": null,
+      "exit_sign_box": null,
+      "non_exit_doors": [],
+      "path_first_turn": "none",
+      "obstacle_side": "center",
+      "from_manifest": "Stop. Wall directly ahead."
+    },
+    "07_motion_blur_partial_chair": {
+      "exit_box": [
+        275,
+        35,
+        362,
+        165
+      ],
+      "exit_sign_box": [
+        280,
+        5,
+        320,
+        25
+      ],
+      "non_exit_doors": [],
+      "path_first_turn": "straight",
+      "obstacle_side": "right",
+      "from_manifest": "Chair close on your right. Exit ahead.",
+      "note": "heavy blur + roll; sign box very approximate"
+    },
+    "08_exit_not_visible": {
+      "exit_box": null,
+      "exit_sign_box": null,
+      "non_exit_doors": [
+        [
+          349,
+          82,
+          433,
+          265
+        ]
+      ],
+      "path_first_turn": "none",
+      "obstacle_side": "left",
+      "from_manifest": "Chair ahead on your left. Exit is not in view."
+    }
+  }
+}

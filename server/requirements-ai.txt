@@ -4,3 +4,4 @@ onnxruntime>=1.18
 numpy>=1.24,<2
 pillow>=10
 anthropic>=1.13
+scipy>=1.11  # server/exit_nav.py (exitpath navigator): connected components / dilation
