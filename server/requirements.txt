@@ -8,3 +8,5 @@ sentry-sdk==2.71.0
 faster-whisper==1.2.1
 snowflake-connector-python==3.17.2
 psycopg[binary]==3.2.9
+google-genai
+python-dotenv>=1.0

@@ -106,10 +106,11 @@ def warmup() -> str | None:
 
 
 def _warm_describe() -> None:
-    """Import the Claude SDK and build its client now (in warmup's thread).
+    """Import the VLM SDK (Gemini or Claude) and build its client now.
 
-    Done lazily, the first obstacle description imported anthropic on the event
-    loop and stalled the proximity heartbeat for about a second.
+    Done lazily, the first obstacle description imported the SDK on the event
+    loop and stalled the proximity heartbeat for about a second. Call from
+    warmup()'s worker thread, not the event loop.
     """
     try:
         from server.ai import describe
@@ -181,13 +182,7 @@ def _describe_status() -> str:
         from server.ai import describe
     except ImportError:
         return "unavailable"
-    if not describe.ENABLED:
-        return "off (SAW_DESCRIBE=0)"
-    if describe._disabled_reason:
-        return f"disabled ({describe._disabled_reason})"
-    if not (os.environ.get("ANTHROPIC_API_KEY") or "").strip():
-        return "idle (no ANTHROPIC_API_KEY; first obstacle will disable it)"
-    return "on"
+    return describe.status()
 
 
 async def read_proximity(jpeg_bytes: bytes) -> ProximityReading:
