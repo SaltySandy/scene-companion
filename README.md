@@ -7,6 +7,10 @@ Hackathon skeleton for an AI-assisted situational-awareness tool. The **phone is
 
 Protocol version: **v1**.
 
+**Proximity sensor demo:** the laptop runs metric depth on each frame and streams a left/center/right
+heartbeat that the phone plays as tones and haptics. Setup, safety rules, preflight, and tuning are in
+[docs/DEMO.md](docs/DEMO.md).
+
 ---
 
 ## 5-minute quickstart
