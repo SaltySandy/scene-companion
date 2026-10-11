@@ -106,6 +106,7 @@ async def lifespan(_app: FastAPI):
     print("  SAW laptop server  (protocol v1)")
     print(f"  LAN IP : {ip}")
     print(f"  Phone  : ws://{ip}:{port}/v1/stream")
+    print(f"  Phone web: http://{ip}:{port}/phone")
     print(f"  Viewer : http://{ip}:{port}/")
     print(f"  USB    : adb reverse tcp:{port} tcp:{port}")
     print(f"           then phone host 127.0.0.1:{port}")
@@ -131,6 +132,12 @@ app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
 @app.get("/", response_class=HTMLResponse)
 async def index() -> HTMLResponse:
     return HTMLResponse((STATIC_DIR / "index.html").read_text(encoding="utf-8"))
+
+
+@app.get("/phone", response_class=HTMLResponse)
+async def phone() -> HTMLResponse:
+    """Mobile web client (iPhone Safari / Android Chrome). Additive; not the laptop viewer."""
+    return HTMLResponse((STATIC_DIR / "phone" / "index.html").read_text(encoding="utf-8"))
 
 
 @app.get("/health")
@@ -323,9 +330,9 @@ async def _emit_wall_status(status: dict) -> None:
 
 
 async def _emit_transcript(text: str, is_final: bool, ts: int) -> None:
-    await hub._broadcast_viewers_text(
-        proto.encode_json(proto.MsgType.TRANSCRIPT, text=text, final=is_final, ts=ts)
-    )
+    payload = proto.encode_json(proto.MsgType.TRANSCRIPT, text=text, final=is_final, ts=ts)
+    await hub._broadcast_viewers_text(payload)
+    await hub._send_phone_text(payload)
     await on_transcript(text, is_final, ts)
 
 

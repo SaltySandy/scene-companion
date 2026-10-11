@@ -3,6 +3,7 @@
 Hackathon skeleton for an AI-assisted situational-awareness tool. The **phone is the eyes and ears**. The **AI runs on a laptop**. This repo is the plumbing: Android camera/mic uplink, laptop live viewer, and a single hook where the model goes.
 
 - **Android app** (`android/`): CameraX rear-camera JPEG stream over WebSocket, TTS + clip playback, optional mic, TalkBack-first UI.
+- **Phone web app** (`server/static/phone/`): same live path in Safari / Chrome, no APK. Open `/phone` on the laptop server. **iPhone setup:** [docs/IPHONE.md](docs/IPHONE.md).
 - **Laptop server** (`server/`): FastAPI WebSocket + a local web page showing the live feed. Put vision logic in `server/ai_hook.py`.
 
 Protocol version: **v1**.
@@ -32,6 +33,8 @@ Both create a `.venv`, install `server/requirements.txt`, and start uvicorn. On 
 Speech-to-text is local faster-whisper on CPU (`int8`, no GPU). The model name is `WHISPER_MODEL` (default `base.en`). The first run downloads it from Hugging Face: **`base.en` is about 150 MB**. `tiny.en` is smaller if you want a quicker first start. `run_server.ps1` prints this before the server comes up.
 
 Open the viewer: [http://127.0.0.1:8765/](http://127.0.0.1:8765/)
+
+Desktop browser test of the phone client (no HTTPS needed): [http://127.0.0.1:8765/phone](http://127.0.0.1:8765/phone). iPhone Safari needs HTTPS — follow **[Use on iPhone](docs/IPHONE.md)**.
 
 ### 2. Install the APK
 
@@ -66,6 +69,18 @@ curl -X POST http://127.0.0.1:8765/say \
 ```
 
 Or type in the viewer text box. A scripted fake phone is in `server/tests/fake_client.py`.
+
+---
+
+## Use on iPhone
+
+**Full setup: [docs/IPHONE.md](docs/IPHONE.md).** Short version:
+
+1. On the laptop: `.\run_server.ps1` (or `$env:SAW_PORT = "8767"; .\run_server.ps1`).
+2. HTTPS in front, same port: `.\serve_phone.ps1` or `.\serve_phone.ps1 -Port 8767`. That runs `tailscale serve --bg --https=443 http://127.0.0.1:<port>` (tailnet-only). Fallback: `.\serve_phone.ps1 -Mode cloudflare`.
+3. iPhone: Tailscale app, same tailnet, Safari → `https://<laptop-magicdns>/phone`, tap **Start**, allow camera.
+
+iOS Safari only grants camera, mic, and motion in a secure context. Plain `http://LAN_IP` will not get a camera. One phone per server. Turn Serve off with `tailscale serve --https=443 off`.
 
 ---
 
@@ -215,6 +230,16 @@ pip install -r server/requirements.txt
 PYTHONPATH=. python -m pytest server/tests -q
 ```
 
+Phone web client (protocol + Playwright with Chromium’s fake camera):
+
+```bash
+pip install -r server/requirements-web.txt
+python -m playwright install chromium
+PYTHONPATH=. python -m pytest server/tests/test_phone_page.py server/tests/test_phone_protocol.py server/tests/test_phone_compat.py server/tests/test_phone_web.py -q
+```
+
+`test_phone_compat.py` boots the servers from `feat/proximity` and `cursor/proximity-warning-977b` in git worktrees (or a dialect stub if a branch will not start) and drives the same JS protocol the browser uses.
+
 ---
 
 ## Error monitoring
@@ -256,7 +281,7 @@ python scripts/tiger_smoke.py
 
 - No on-device model. The AI is a stub plus a commented API example.
 - Phone and laptop clocks are not synced; “latency” on the viewer is `recv_ts - capture_ts` and can look wrong across Wi-Fi. Inter-frame time is the honest number.
-- Cleartext `ws://` only (hackathon LAN / USB). No TLS.
+- Cleartext `ws://` only (hackathon LAN / USB). No TLS. The `/phone` web client uses `wss://` when the page itself is HTTPS (Tailscale serve/funnel or a Cloudflare tunnel).
 - Transcripts are English (`language="en"`) on CPU. The first `base.en` download is about 150 MB.
 - Emulator camera is a fake scene if you use one; a real phone is the intended client. The emulator also has to be checked before this build goes on a phone (see the report).
 - JPEG encode + rotate on the phone costs a few milliseconds per frame at 640×480.
