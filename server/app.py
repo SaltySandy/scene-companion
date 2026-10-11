@@ -136,6 +136,12 @@ async def lifespan(_app: FastAPI):
         print(f"  Record : {hub.recorder.path}")
     if ai_hook.PROXIMITY_ON:
         print(f"  Depth  : {depth_model or 'MISSING - phone will hear sensor lost (scripts/export_depth_onnx.py)'}")
+    try:
+        from server.nav_live import banner as nav_banner
+
+        print(f"  Nav    : {nav_banner()}")
+    except Exception:
+        print("  Nav    : unavailable")
     print("=" * 60)
     print()
     yield
@@ -182,7 +188,49 @@ async def health() -> dict[str, object]:
         "latest_jpeg_bytes": len(hub.last_jpeg) if hub.last_jpeg else 0,
         "fov": ai_hook.fov_params(),
         "assistant": {"enabled": assistant.enabled, "nimble": assistant.nimble_enabled},
+        "nav": _nav_status(),
     }
+
+
+def _nav_status() -> dict:
+    try:
+        from server.nav_live import status
+
+        return status()
+    except Exception as exc:
+        return {"enabled": False, "error": str(exc)}
+
+
+@app.get("/nav")
+async def nav_get() -> JSONResponse:
+    """Navigator overlay + toggle state. Cheap; the viewer polls this."""
+    return JSONResponse(_nav_status(), headers={"Cache-Control": "no-store"})
+
+
+@app.post("/nav")
+async def nav_set(request: Request) -> JSONResponse:
+    """Turn spoken exit guidance on or off without restarting.
+
+    Body: ``{"enabled": true}`` or ``{"enabled": false}``. ``SAW_NAV`` is the
+    boot default; this override wins until the process exits.
+    """
+    from server.nav_live import set_enabled
+
+    body: dict = {}
+    if "application/json" in request.headers.get("content-type", ""):
+        parsed, err = await read_json(request)
+        if err is not None:
+            return err
+        if isinstance(parsed, dict):
+            body = parsed
+    if "enabled" in body:
+        on = bool(body.get("enabled"))
+    else:
+        raw = request.query_params.get("enabled")
+        if raw is None:
+            return JSONResponse({"ok": False, "error": "enabled required"}, status_code=400)
+        on = raw.strip().lower() not in {"0", "false", "off", "no"}
+    return JSONResponse({"ok": True, **set_enabled(on)})
 
 
 @app.post("/say")

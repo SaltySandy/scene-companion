@@ -677,7 +677,7 @@ def main(argv: list[str] | None = None) -> int:
     p = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     p.add_argument("--mode", choices=("inprocess", "websocket", "ws"), default="inprocess")
     p.add_argument("--url", help="Running server: http://127.0.0.1:8765 or ws://host:8767/v1/stream")
-    p.add_argument("--navigator", default=os.environ.get("SAW_NAVIGATOR") or "baseline")
+    p.add_argument("--navigator", default=os.environ.get("SAW_NAVIGATOR") or "exit")
     p.add_argument("--sequence", default="default", help="Comma ids, e.g. 01,02,04")
     p.add_argument("--llm-judge", action="store_true", help="Optional LLM utterance judge (needs an API key)")
     p.add_argument("--json", dest="json_path", default="", help="Write scorecard JSON (also printed)")

@@ -293,7 +293,27 @@ Sequence continuity (entry → blocking chair → door):
 python scripts/replay_scenes.py --sequence 01,02,04
 ```
 
-`--mode websocket` boots a throwaway server and talks SAW v1 as a fake phone. `--llm-judge` adds an optional API-key utterance judge; the default score is deterministic keyword checks (direction + stop). Set `SAW_NAV=1` on the laptop if you want the live hook to speak the navigation utterance. After PR #6 (Brian's proximity) lands, the same command captures `proximity` heartbeats and scores them in the last column.
+`--mode websocket` boots a throwaway server and talks SAW v1 as a fake phone. `--llm-judge` adds an optional API-key utterance judge; the default score is deterministic keyword checks (direction + stop). Default navigator is `exit` (YOLO + EXIT-sign heuristic). Compare against the color stub with `--navigator baseline`.
+
+### Exit guidance (live)
+
+Off by default so the demo can run proximity-only. Turn it on:
+
+```powershell
+$env:SAW_NAV = "1"          # boot default
+# or, while the server is up:
+Invoke-RestMethod -Method POST -Uri http://127.0.0.1:8765/nav -ContentType application/json -Body '{"enabled":true}'
+```
+
+`GET /nav` and the viewer “speak guidance” checkbox are the same toggle. Proximity danger still owns the ear; nav stays quiet unless it is an urgent Stop.
+
+YOLO weights (chairs / furniture). One PowerShell command from the repo root:
+
+```powershell
+pip install -q ultralytics; python -c "from pathlib import Path; from ultralytics import YOLO; Path('models').mkdir(exist_ok=True); Path(YOLO('yolov8n.pt').export(format='onnx', imgsz=320)).replace(Path('models/yolov8n.onnx'))"
+```
+
+Or `python scripts/fetch_nav_models.py`. Without the file, the navigator uses a color fallback. Depth is still Brian’s `models/da2-metric-indoor-s-350x266.onnx` (`scripts/export_depth_onnx.py`); this VM does not have it.
 
 ---
 
