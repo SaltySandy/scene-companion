@@ -126,7 +126,15 @@ async def on_transcript(text: str, is_final: bool, ts: int) -> None:
     from server.hub import say
 
     sinks.log_event("transcript", text.strip(), meta={"ts": ts, "final": True})
-    await say(f"You said: {text.strip()}")
+
+    from server.scene_assistant import assistant
+
+    question = text.strip()
+    if assistant.enabled and len(question) >= 3:
+        # Gemini looks at the current frame; Nimble adds web facts when useful.
+        assistant.ask(question)
+    else:
+        await say(f"You said: {question}")
 
 
 def reset_demo_state() -> None:

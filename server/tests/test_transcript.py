@@ -72,6 +72,7 @@ def test_phone_speaking_drops_audio() -> None:
 
 @pytest.mark.asyncio
 async def test_wav_through_protocol_returns_final_transcript() -> None:
+    pytest.importorskip("faster_whisper")
     os.environ["WHISPER_MODEL"] = "tiny.en"
     import server.ai_hook as hook
 
@@ -82,7 +83,13 @@ async def test_wav_through_protocol_returns_final_transcript() -> None:
     import websockets
 
     from server.app import app
+    from server.scene_assistant import assistant
     from server.transcribe import transcriber
+
+    # This test checks the plain "You said: ..." echo, so keep questions off.
+    previous_assistant = assistant.enabled
+    assistant.enabled = False
+    transcriber._backend = "whisper"
 
     # This process may already have a transcriber thread from another test,
     # and a previous say() may still be inside its echo-mute window.
@@ -121,6 +128,7 @@ async def test_wav_through_protocol_returns_final_transcript() -> None:
             finals = await asyncio.wait_for(view, timeout=5)
     finally:
         hook.ANNOUNCE_EVERY_SEC = previous_announce
+        assistant.enabled = previous_assistant
         server.should_exit = True
         await task
 

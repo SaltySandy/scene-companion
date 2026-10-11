@@ -124,6 +124,33 @@ The viewer page has a **Wall detector** card that shows the live verdict (green,
 
 Tests (no key or network needed): `PYTHONPATH=. python -m pytest server/tests/test_wall_detector.py -q`
 
+## "What is this?" (Gemini + Nimble)
+
+Turn on **Listen** on the phone and ask a question about what the camera sees, e.g. *"What is this?"*, *"What does this sign say?"*, *"What's in front of me?"*.
+
+1. The newest camera frame and the question go to Gemini (`SAW_GEMINI_VISION_MODEL`). The phone speaks a short answer right away.
+2. If Gemini recognises something specific (a product, book, medicine box, landmark, sign), it also returns a search query. With `NIMBLE_API_KEY` set, Nimble's Search API (`POST https://sdk.nimbleway.com/v2/search`) fetches live web results, Gemini condenses them, and the phone adds *"More about it: ..."*.
+
+Wall alerts are urgent and interrupt answers. A new question cancels one still in progress.
+
+Speech-to-text uses local faster-whisper when installed, otherwise Gemini (finished sentences only). That covers Python versions where faster-whisper has no build.
+
+Test without the phone mic: type a question in the viewer's **Ask** box, or
+
+```bash
+curl -X POST http://127.0.0.1:8765/ask -H 'content-type: application/json' -d '{"question":"What is this?"}'
+```
+
+## iPhone (or any phone) without the Android app
+
+`/phone` is a browser version of the phone client. It streams the rear camera, speaks alerts and answers, and sends mic audio, using the same protocol as the Android app. Safari only allows the camera on **https**, so use a free Cloudflare tunnel:
+
+1. Window 1: `.\run_server.ps1`
+2. Window 2: `.\run_tunnel.ps1` (installs `cloudflared` with winget the first time, then run it again). It prints `https://<random>.trycloudflare.com`.
+3. On the iPhone, open that link **plus `/phone`** in Safari, tap **Start** and allow the camera. **Listen** turns on the mic; **What is this?** asks without speaking.
+
+Keep the screen on and Safari in front: iOS pauses the camera and speech in the background. iPhones don't vibrate from web pages, so alerts are spoken only.
+
 ---
 
 ## Protocol v1

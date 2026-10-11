@@ -21,7 +21,11 @@ log = logging.getLogger("saw")
 class Hub:
     phone: WebSocket | None = None
     viewers: set[WebSocket] = field(default_factory=set)
+    # Viewers that only want status text (e.g. the iPhone web client), not JPEGs.
+    text_only_viewers: set[WebSocket] = field(default_factory=set)
     latest_frame: tuple[bytes, int] | None = None
+    # Newest frame, never cleared by the worker. Used to answer "What is this?".
+    last_seen_frame: tuple[bytes, int] | None = None
     frame_event: asyncio.Event = field(default_factory=asyncio.Event)
     frames_in_window: list[float] = field(default_factory=list)
     last_recv_mono: float = 0.0
@@ -43,15 +47,19 @@ class Hub:
             log.info("phone disconnected")
             sinks.log_event("disconnect", "phone disconnected")
 
-    def attach_viewer(self, ws: WebSocket) -> None:
+    def attach_viewer(self, ws: WebSocket, frames: bool = True) -> None:
         self.viewers.add(ws)
+        if not frames:
+            self.text_only_viewers.add(ws)
 
     def detach_viewer(self, ws: WebSocket) -> None:
         self.viewers.discard(ws)
+        self.text_only_viewers.discard(ws)
 
     def submit_frame(self, jpeg: bytes, ts: int) -> None:
         """Keep only the latest JPEG. The worker never queues a backlog."""
         self.latest_frame = (jpeg, ts)
+        self.last_seen_frame = (jpeg, ts)
         self.frame_event.set()
 
     async def say(self, text: str, urgent: bool = False) -> None:
@@ -136,6 +144,8 @@ class Hub:
         stats = self._stats_json(ts, recv_ms, len(jpeg))
         dead: list[WebSocket] = []
         for ws in list(self.viewers):
+            if ws in self.text_only_viewers:
+                continue
             try:
                 await ws.send_bytes(envelope)
                 await ws.send_text(stats)

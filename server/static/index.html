@@ -78,6 +78,14 @@
         <div class="stat"><span>JPEG size</span><b id="bytes">—</b></div>
       </div>
       <div class="card">
+        <h2>Ask (Gemini + Nimble)</h2>
+        <div class="row" style="margin-top:0">
+          <input id="askText" value="What is this?" aria-label="Question about the camera view" style="flex:1; background:#0b0d10; color:var(--ink); border:1px solid #2a3340; border-radius:8px; padding:8px;" />
+          <button type="button" id="askBtn">Ask</button>
+        </div>
+        <div class="log" id="askLog" style="margin-top:8px; color:var(--ink)">Speak a question on the phone (Listen on) or type one here.</div>
+      </div>
+      <div class="card">
         <h2>Speak to the phone</h2>
         <textarea id="sayText" placeholder="Something the phone should say">stairs ahead, on your right</textarea>
         <div class="row">
@@ -163,6 +171,12 @@
         $("wallConf").textContent = obj.confidence == null ? "—" : Math.round(obj.confidence * 100) + "%";
         $("wallNote").textContent = obj.note || "—";
         $("wallConn").textContent = obj.error ? ("error: " + obj.error) : (obj.connected ? obj.model : "reconnecting…");
+      } else if (obj.type === "assistant") {
+        const box = $("askLog");
+        if (obj.stage === "looking") box.textContent = "Q: " + obj.question + "\nLooking…";
+        else if (obj.stage === "answer") box.textContent = "Q: " + obj.question + "\nA: " + obj.answer + (obj.search_query ? "\nNimble search: " + obj.search_query + "…" : "");
+        else if (obj.stage === "more") box.textContent += "\nMore: " + obj.more + (obj.sources && obj.sources.length ? "\nSources: " + obj.sources.join(", ") : "");
+        else if (obj.stage === "error") box.textContent += "\nError: " + obj.error;
       } else if (obj.type === "say") {
         log("say" + (obj.urgent ? " (urgent)" : "") + ": " + obj.text);
       } else if (obj.type === "hello_ack") {
@@ -205,6 +219,18 @@
       const j = await r.json();
       log(j.ok ? "posted say" : ("say failed: " + j.error));
     }
+    async function sendAsk() {
+      const question = $("askText").value;
+      const r = await fetch("/ask", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ question }),
+      });
+      const j = await r.json();
+      if (!j.ok) $("askLog").textContent = "Ask failed: " + j.error;
+    }
+    $("askBtn").onclick = sendAsk;
+    $("askText").addEventListener("keydown", (e) => { if (e.key === "Enter") sendAsk(); });
     $("sayBtn").onclick = () => sendSay(false);
     $("sayUrgent").onclick = () => sendSay(true);
     $("recallBtn").onclick = async () => {

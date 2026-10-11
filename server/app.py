@@ -30,6 +30,7 @@ from server.ai_hook import on_transcript
 from server.event_sinks import sinks
 from server.hub import hub, play, say
 from server.transcribe import transcriber
+from server.scene_assistant import assistant
 from server.wall_detector import detector as wall_detector
 
 log = logging.getLogger("saw")
@@ -99,6 +100,7 @@ async def lifespan(_app: FastAPI):
     transcriber.bind(asyncio.get_running_loop(), _emit_transcript)
     transcriber.start()
     wall_detector.start(speak=say, status=_emit_wall_status)
+    assistant.bind(speak=say, frame=lambda: hub.last_seen_frame, status=_emit_assistant_status)
     ip = lan_ip()
     port = DEFAULT_PORT
     print()
@@ -107,12 +109,17 @@ async def lifespan(_app: FastAPI):
     print(f"  LAN IP : {ip}")
     print(f"  Phone  : ws://{ip}:{port}/v1/stream")
     print(f"  Viewer : http://{ip}:{port}/")
+    print(f"  iPhone : run .\\run_tunnel.ps1, then open the https://...trycloudflare.com/phone link")
     print(f"  USB    : adb reverse tcp:{port} tcp:{port}")
     print(f"           then phone host 127.0.0.1:{port}")
     if wall_detector.enabled:
         print(f"  Walls  : Gemini Live ({wall_detector.model}), check every {wall_detector.interval:.1f}s")
     else:
         print("  Walls  : OFF (set GEMINI_API_KEY in .env to enable)")
+    if assistant.enabled:
+        print(f"  Ask    : Gemini ({os.environ.get('SAW_GEMINI_VISION_MODEL', 'gemini-3.5-flash-lite')})"
+              f" + Nimble web search {'ON' if assistant.nimble_enabled else 'OFF (set NIMBLE_API_KEY)'}")
+        print(f"  Voice  : speech-to-text via {transcriber.backend}")
     print(f"  Say    : curl -X POST http://{ip}:{port}/say -H 'content-type: application/json' -d '{{\"text\":\"hello\"}}'")
     print("=" * 60)
     print()
@@ -131,6 +138,12 @@ app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
 @app.get("/", response_class=HTMLResponse)
 async def index() -> HTMLResponse:
     return HTMLResponse((STATIC_DIR / "index.html").read_text(encoding="utf-8"))
+
+
+@app.get("/phone", response_class=HTMLResponse)
+async def phone_page() -> HTMLResponse:
+    """Browser phone client (iPhone Safari / any phone). Needs https for the camera."""
+    return HTMLResponse((STATIC_DIR / "phone.html").read_text(encoding="utf-8"))
 
 
 @app.get("/health")
@@ -169,6 +182,23 @@ async def http_say(request: Request) -> JSONResponse:
         return JSONResponse({"ok": False, "error": "empty text"}, status_code=400)
     await say(text, urgent=urgent)
     return JSONResponse({"ok": True, "text": text.strip(), "urgent": urgent})
+
+
+@app.post("/ask")
+async def http_ask(request: Request) -> JSONResponse:
+    """Ask about the current camera frame, same as speaking a question."""
+    question = ""
+    if "application/json" in request.headers.get("content-type", ""):
+        body = await request.json()
+        if isinstance(body, dict):
+            question = str(body.get("question") or body.get("text") or "")
+    else:
+        question = (await request.body()).decode("utf-8", errors="replace")
+    question = question.strip() or "What is this?"
+    if not assistant.enabled:
+        return JSONResponse({"ok": False, "error": "assistant off (set GEMINI_API_KEY)"}, status_code=400)
+    assistant.ask(question)
+    return JSONResponse({"ok": True, "question": question, "nimble": assistant.nimble_enabled})
 
 
 @app.post("/recall")
@@ -239,7 +269,7 @@ async def phone_stream(ws: WebSocket) -> None:
 @app.websocket("/v1/viewer")
 async def viewer_stream(ws: WebSocket) -> None:
     await ws.accept()
-    hub.attach_viewer(ws)
+    hub.attach_viewer(ws, frames=ws.query_params.get("frames") != "0")
     await ws.send_text(
         proto.encode_json(
             proto.MsgType.HELLO_ACK,
@@ -316,6 +346,10 @@ async def _handle_phone_bytes(data: bytes) -> None:
         await hub._broadcast_viewers_text(
             proto.encode_json(proto.MsgType.MIC, enabled=True, bytes=len(msg.payload), t=msg.timestamp_ms)
         )
+
+
+async def _emit_assistant_status(status: dict) -> None:
+    await hub._broadcast_viewers_text(proto.encode_json(proto.MsgType.ASSISTANT, **status))
 
 
 async def _emit_wall_status(status: dict) -> None:

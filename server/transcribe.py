@@ -1,4 +1,8 @@
-"""Mic PCM -> faster-whisper, on a background thread.
+"""Mic PCM -> text, on a background thread.
+
+Backend: local faster-whisper when it is installed, otherwise Gemini (needs
+GEMINI_API_KEY; only finished utterances are sent, no grey partials).
+Force one with SAW_STT_BACKEND=whisper|gemini.
 
 The WebSocket handler only enqueues bytes. Model load and transcribe never
 run on the asyncio loop, so a slow CPU decode cannot stall camera frames.
@@ -7,11 +11,14 @@ run on the asyncio loop, so a slow CPU decode cannot stall camera frames.
 from __future__ import annotations
 
 import asyncio
+import importlib.util
+import io
 import logging
 import os
 import queue
 import threading
 import time
+import wave
 from typing import Awaitable, Callable
 
 from server.vad import UtteranceSplitter
@@ -36,6 +43,27 @@ class LiveTranscriber:
         self.phone_speaking = False
         self.mute_until = 0.0
         self.dropped = 0
+        self._backend: str | None = None
+        self._gemini_client = None
+
+    @property
+    def backend(self) -> str:
+        """"custom", "whisper", "gemini" or "none". Decided once."""
+        if self._backend is None:
+            if self._transcribe_fn is not None:
+                self._backend = "custom"
+            else:
+                forced = os.environ.get("SAW_STT_BACKEND", "auto").strip().lower()
+                has_whisper = importlib.util.find_spec("faster_whisper") is not None
+                has_gemini = bool(os.environ.get("GEMINI_API_KEY") or os.environ.get("GOOGLE_API_KEY"))
+                if forced == "whisper" or (forced == "auto" and has_whisper):
+                    self._backend = "whisper"
+                elif forced == "gemini" or (forced == "auto" and has_gemini):
+                    self._backend = "gemini"
+                else:
+                    self._backend = "none"
+            log.info("speech-to-text backend: %s", self._backend)
+        return self._backend
 
     def bind(self, loop: asyncio.AbstractEventLoop, emit: Emit) -> None:
         self._loop = loop
@@ -122,6 +150,11 @@ class LiveTranscriber:
                 log.exception("vad failed")
                 continue
             for piece in pieces:
+                # Gemini is a network call: skip partials, send only full utterances.
+                if not piece.is_final and self.backend == "gemini":
+                    continue
+                if self.backend == "none":
+                    continue
                 try:
                     text = self._transcribe(piece.pcm)
                 except Exception:
@@ -145,6 +178,8 @@ class LiveTranscriber:
     def _transcribe(self, pcm: bytes) -> str:
         if self._transcribe_fn is not None:
             return self._transcribe_fn(pcm)
+        if self.backend == "gemini":
+            return self._gemini_transcribe(pcm)
         model = self._load_model()
         import numpy as np
 
@@ -157,6 +192,32 @@ class LiveTranscriber:
             without_timestamps=True,
         )
         return " ".join(segment.text.strip() for segment in segments).strip()
+
+    def _gemini_transcribe(self, pcm: bytes) -> str:
+        from google import genai
+        from google.genai import types
+
+        if self._gemini_client is None:
+            self._gemini_client = genai.Client(
+                api_key=os.environ.get("GEMINI_API_KEY") or os.environ.get("GOOGLE_API_KEY")
+            )
+        buf = io.BytesIO()
+        with wave.open(buf, "wb") as w:
+            w.setnchannels(1)
+            w.setsampwidth(2)
+            w.setframerate(16_000)
+            w.writeframes(pcm)
+        model = os.environ.get("SAW_GEMINI_STT_MODEL", "gemini-3.5-flash-lite").strip()
+        resp = self._gemini_client.models.generate_content(
+            model=model,
+            contents=[
+                types.Part.from_bytes(data=buf.getvalue(), mime_type="audio/wav"),
+                "Transcribe this English speech exactly. Output only the spoken words. "
+                "If there is no clear speech, output nothing.",
+            ],
+            config=types.GenerateContentConfig(temperature=0.0, max_output_tokens=120),
+        )
+        return (resp.text or "").strip()
 
     def _load_model(self):
         name = (os.environ.get("WHISPER_MODEL") or DEFAULT_MODEL).strip() or DEFAULT_MODEL
