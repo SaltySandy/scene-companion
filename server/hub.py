@@ -227,6 +227,7 @@ class Hub:
 
             meta = dict(self.last_fov_meta or fov_params())
             meta["seq"] = self.fov_seq
+            meta["has_jpeg"] = self.last_fov_jpeg is not None
             if self.phone_config:
                 meta["phone"] = self.phone_config
             await ws.send_text(proto.encode_json(proto.MsgType.FOV, **meta))
@@ -261,6 +262,7 @@ class Hub:
                 self.last_fov_jpeg = jpeg
                 meta = {**fov_params(), **meta}
             meta["seq"] = self.fov_seq
+            meta["has_jpeg"] = self.last_fov_jpeg is not None
             if self.phone_config:
                 meta["phone"] = self.phone_config
             self.last_fov_meta = meta

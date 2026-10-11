@@ -26,7 +26,8 @@
     .feeds.overlay { grid-template-columns: 1fr; }
     @media (max-width: 1100px) { .feeds:not(.overlay) { grid-template-columns: 1fr; } }
     .stage { background: var(--panel); border-radius: 12px; display: flex; align-items: center; justify-content: center; overflow: hidden; min-height: 280px; position: relative; }
-    .stage img, .stage canvas { max-width: 100%; max-height: 100%; display: block; background: #000; }
+    .stage img { max-width: 100%; max-height: 100%; display: block; background: #000; }
+    .stage canvas { max-width: 100%; max-height: 100%; display: block; background: transparent; }
     .stage .stack { position: relative; display: inline-block; max-width: 100%; max-height: 100%; }
     .stage .stack img, .stage .stack canvas { max-width: 100%; max-height: 70vh; }
     .stage .stack canvas { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; }
@@ -204,11 +205,15 @@
         ? (meta.near_m + " / " + meta.danger_m + " m") : "—";
       $("fovMount").textContent = meta.mount_note || "upright (phone)";
       $("fovDescribe").textContent = meta.describe || "—";
-      if (typeof meta.seq === "number" && meta.seq !== lastFovSeq) {
+      if (meta.has_jpeg && typeof meta.seq === "number" && meta.seq !== lastFovSeq) {
         lastFovSeq = meta.seq;
         $("fov").src = "/fov.jpg?t=" + meta.seq;
         $("fov").hidden = false;
         $("fovEmpty").hidden = true;
+      } else if (!meta.has_jpeg) {
+        $("fovEmpty").textContent = meta.model
+          ? "Waiting for a depth snapshot."
+          : "No depth model loaded — ROI band is drawn on the live frame.";
       }
       drawRoi();
     }
