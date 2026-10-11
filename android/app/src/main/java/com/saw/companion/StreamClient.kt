@@ -59,7 +59,9 @@ class StreamClient(
         connected = false
         main.removeCallbacksAndMessages(null)
         socketRef.getAndSet(null)?.cancel()
-        setState(ConnectionState.STOPPED, "stopped")
+        if (lastSpokenState != HostPort.INVALID_MESSAGE) {
+            setState(ConnectionState.STOPPED, "stopped")
+        }
     }
 
     /** True when a frame sent now would go straight out. The camera skips encoding otherwise. */
@@ -159,12 +161,21 @@ class StreamClient(
                 "connecting"
             },
         )
-        val host = prefs.parsedHost()
-        val port = prefs.parsedPort()
-        val url = "ws://$host:$port/v1/stream"
+        val parsed = HostPort.parse(prefs.hostPort)
+        if (parsed == null) {
+            failInvalidAddress(IllegalArgumentException("Invalid host:port"))
+            return
+        }
+        val url = "ws://${parsed.host}:${parsed.port}/v1/stream"
         Log.i(TAG, "connecting $url")
-        val req = Request.Builder().url(url).build()
-        val ws = http.newWebSocket(req, object : WebSocketListener() {
+        val req = try {
+            Request.Builder().url(url).build()
+        } catch (e: Exception) {
+            failInvalidAddress(e)
+            return
+        }
+        val ws = try {
+            http.newWebSocket(req, object : WebSocketListener() {
             override fun onOpen(webSocket: WebSocket, response: Response) {
                 socketRef.set(webSocket)
                 connected = true
@@ -214,8 +225,22 @@ class StreamClient(
                 SawSentry.capture(t, "websocket")
                 onDrop("failure")
             }
-        })
+            })
+        } catch (e: Exception) {
+            failInvalidAddress(e)
+            return
+        }
         socketRef.set(ws)
+    }
+
+    private fun failInvalidAddress(error: Exception) {
+        Log.w(TAG, "invalid server address: ${error.message}")
+        SawSentry.capture(error, "connect_url")
+        running = false
+        connected = false
+        main.removeCallbacksAndMessages(null)
+        socketRef.getAndSet(null)?.cancel()
+        setState(ConnectionState.STOPPED, HostPort.INVALID_MESSAGE)
     }
 
     private fun handleText(text: String) {

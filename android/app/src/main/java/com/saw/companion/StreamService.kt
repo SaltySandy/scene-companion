@@ -39,6 +39,10 @@ class StreamService : LifecycleService() {
         running = true
         startInForeground()
         acquireWakeLock()
+        if (HostPort.parse(prefs.hostPort) == null) {
+            failInvalidAddress(IllegalArgumentException("Invalid host:port"))
+            return
+        }
         val streamClient = StreamClient(prefs, speech, object : StreamClient.Listener {
             override fun onState(state: StreamClient.ConnectionState, spoken: String) {
                 cuePolicy.onConnection(state == StreamClient.ConnectionState.CONNECTED)
@@ -49,7 +53,9 @@ class StreamService : LifecycleService() {
                         .putExtra(EXTRA_STATUS, spoken)
                         .putExtra(EXTRA_RUNNING, true),
                 )
-                if (spoken == "connected" || spoken == "connection lost, retrying") {
+                if (spoken == HostPort.INVALID_MESSAGE) {
+                    failInvalidAddress(IllegalArgumentException(spoken))
+                } else if (spoken == "connected" || spoken == "connection lost, retrying") {
                     speech.enqueueSay(spoken, urgent = true)
                 }
             }
@@ -69,13 +75,34 @@ class StreamService : LifecycleService() {
         client = streamClient
         speech.onSpeakingChanged = { active -> streamClient.sendSpeaking(active) }
         speech.onTtsEvent = { event, text, id -> streamClient.sendTtsEvent(event, text, id) }
-        streamClient.start()
+        try {
+            streamClient.start()
+        } catch (e: Exception) {
+            failInvalidAddress(e)
+            return
+        }
         camera = CameraStreamer(this, this, prefs, streamClient::readyToSend) { jpeg, ts ->
             streamClient.sendJpeg(jpeg, ts)
         }.also { it.start() }
         if (prefs.micEnabled) {
             mic = MicStreamer { pcm, ts -> streamClient.sendMicPcm(pcm, ts) }.also { it.start() }
         }
+    }
+
+    private var stayDown = false
+
+    private fun failInvalidAddress(error: Exception) {
+        stayDown = true
+        SawSentry.capture(error, "connect_url")
+        lastSpoken = HostPort.INVALID_MESSAGE
+        speech.enqueueSay(lastSpoken, urgent = true)
+        sendBroadcast(
+            Intent(ACTION_STATUS)
+                .setPackage(packageName)
+                .putExtra(EXTRA_STATUS, lastSpoken)
+                .putExtra(EXTRA_RUNNING, false),
+        )
+        stopSelf()
     }
 
     private var listenOverridden = false
@@ -111,7 +138,7 @@ class StreamService : LifecycleService() {
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         super.onStartCommand(intent, flags, startId)
-        if (intent?.action == ACTION_STOP) {
+        if (intent?.action == ACTION_STOP || stayDown) {
             stopSelf()
             return START_NOT_STICKY
         }
@@ -119,6 +146,7 @@ class StreamService : LifecycleService() {
     }
 
     override fun onDestroy() {
+        val status = if (lastSpoken == HostPort.INVALID_MESSAGE) lastSpoken else "stopped"
         running = false
         instance = null
         mic?.stop()
@@ -130,7 +158,7 @@ class StreamService : LifecycleService() {
         sendBroadcast(
             Intent(ACTION_STATUS)
                 .setPackage(packageName)
-                .putExtra(EXTRA_STATUS, "stopped")
+                .putExtra(EXTRA_STATUS, status)
                 .putExtra(EXTRA_RUNNING, false),
         )
         super.onDestroy()

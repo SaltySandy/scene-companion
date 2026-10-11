@@ -17,6 +17,7 @@
     <string name="mic_on_cd">Listening. Microphone streaming is on by default. Turn off to stop sending your voice to the laptop. Say what is in front of me.</string>
     <string name="hint_usb">USB is most reliable: adb reverse tcp:8765 tcp:8765, then use 127.0.0.1:8765.</string>
     <string name="camera_required">Camera permission is required.</string>
+    <string name="invalid_server_address">Invalid server address</string>
     <string name="notif_channel">Camera stream</string>
     <string name="notif_channel_desc">Keeps the camera and laptop connection running when the screen locks.</string>
     <string name="notif_title">Scene Companion is streaming</string>
