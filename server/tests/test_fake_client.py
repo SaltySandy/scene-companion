@@ -76,6 +76,8 @@ async def test_http_say_reaches_connected_phone() -> None:
                 )
             assert r.status_code == 200
             incoming = proto.decode_json(await asyncio.wait_for(ws.recv(), timeout=2))
+            while incoming["type"] == "ping":  # clock sync may interleave
+                incoming = proto.decode_json(await asyncio.wait_for(ws.recv(), timeout=2))
             assert incoming["type"] == "say"
             assert incoming["text"] == "curb in two steps"
             assert incoming["urgent"] is True

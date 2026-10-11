@@ -174,6 +174,14 @@ class StreamClient(
                     pendingUrgentClip = obj.optBoolean("urgent", false)
                 }
             }
+            Protocol.TYPE_PING -> {
+                // Laptop clock sync: echo t0 and stamp our clock as late as possible.
+                val reply = Protocol.encodeJson(
+                    Protocol.TYPE_PONG,
+                    mapOf("t0" to obj.optLong("t0"), "tp" to Protocol.nowMs()),
+                )
+                socketRef.get()?.send(reply)
+            }
             Protocol.TYPE_PONG, Protocol.TYPE_HELLO_ACK -> Unit
         }
     }

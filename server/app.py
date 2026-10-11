@@ -103,8 +103,10 @@ async def lifespan(_app: FastAPI):
     print()
     yield
     sinks.stop()
-    if hub.worker_task:
-        hub.worker_task.cancel()
+    tasks = [t for t in (hub.worker_task, hub.clock_task) if t]
+    for task in tasks:
+        task.cancel()
+    await asyncio.gather(*tasks, return_exceptions=True)
     hub.recorder.stop()  # after the worker, so its last record is flushed
 
 
@@ -127,6 +129,8 @@ async def health() -> dict[str, object]:
         "frames_dropped": hub.frames_dropped,
         "recording": hub.recorder.session_id if hub.recorder.enabled else None,
         "records_dropped": hub.recorder.records_dropped,
+        "clock_offset_ms": hub.clock.offset_ms,
+        "clock_rtt_ms": hub.clock.rtt_ms,
         "lan_ip": lan_ip(),
     }
 
@@ -265,6 +269,11 @@ async def _handle_phone_text(_ws: WebSocket, text: str) -> None:
     kind = obj["type"]
     if kind == proto.MsgType.PING:
         await _ws_safe_send_text(_ws, proto.encode_json(proto.MsgType.PONG, t=obj.get("t")))
+    elif kind == proto.MsgType.PONG:
+        # Answer to our clock ping: t0 = our send time, tp = phone clock.
+        t0, tp = obj.get("t0"), obj.get("tp")
+        if isinstance(t0, int) and isinstance(tp, int):
+            hub.clock.add(t0, tp, proto.now_ms())
     elif kind == proto.MsgType.HELLO:
         log.info("phone hello: %s", obj)
     elif kind == proto.MsgType.CONFIG:

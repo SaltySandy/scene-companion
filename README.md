@@ -129,13 +129,16 @@ If a frame is still on the phone’s outbound WebSocket queue, the next JPEG is 
 
 Every text message is `{"v":1,"type":"..."}`.
 
-Phone → laptop: `hello`, `config` (`width`, `height`, `fps`, `quality`, `mic`), `ping`.
+Phone → laptop: `hello`, `config` (`width`, `height`, `fps`, `quality`, `mic`), `ping`,
+`pong` `{"t0":<echoed>,"tp":<phone epoch ms>}` (answer to a laptop clock ping).
 
 Laptop → phone:
 
 - `hello_ack`
 - `say` — `{"v":1,"type":"say","text":"...","urgent":false}` (Android TTS; lowest latency, works offline)
 - `pong`
+- `ping` `{"t0":<laptop epoch ms>}` — clock sync; the phone answers `pong` with `t0` and its own
+  clock `tp` right away. Sent 5× at connect, then every 2 s. Clients must ignore types they don't know.
 - `status` with `msg="audio"` may precede an `AUDIO_CLIP` and can carry `urgent`
 
 HTTP helpers (same laptop):

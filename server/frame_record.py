@@ -25,6 +25,8 @@ class FrameRecord:
     decision: Decision
     message: str | None  # text sent to the phone, if any
     dropped_since_last: int  # frames overwritten in the slot before this one
+    clock_offset_ms: int | None = None  # phone clock minus laptop clock, if synced
+    clock_rtt_ms: int | None = None  # rtt of the sync sample; offset error <= rtt/2
 
     def to_json(self) -> str:
         return json.dumps(asdict(self), separators=(",", ":"))

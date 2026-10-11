@@ -12,11 +12,18 @@ from fastapi import WebSocket
 
 from server import protocol as proto
 from server.ai_hook import Play, Response, Say, on_frame
+from server.clock import ClockSync
 from server.event_sinks import sinks
 from server.frame_record import FrameRecord
 from server.recorder import Recorder
 
 log = logging.getLogger("saw")
+
+# Clock sync: a quick burst after connect so the offset is known within ~1 s,
+# then a slow trickle to follow drift and pick up a lower-rtt sample.
+CLOCK_BURST = 5
+CLOCK_BURST_SEC = 0.2
+CLOCK_EVERY_SEC = 2.0
 
 
 @dataclass(frozen=True)
@@ -41,6 +48,8 @@ class Hub:
     frames_dropped: int = 0  # total overwritten in the latest-frame slot
     _drops_since_take: int = 0
     recorder: Recorder = field(default_factory=Recorder.disabled)
+    clock: ClockSync = field(default_factory=ClockSync)
+    clock_task: asyncio.Task[None] | None = None
 
     async def attach_phone(self, ws: WebSocket) -> None:
         if self.phone is not None:
@@ -49,6 +58,7 @@ class Hub:
             except Exception:
                 pass
         self.phone = ws
+        self.clock.reset()
         log.info("phone connected")
         sinks.log_event("connect", "phone connected")
 
@@ -178,7 +188,8 @@ class Hub:
         if self.last_recv_mono:
             inter = (now - self.last_recv_mono) * 1000.0
         self.last_recv_mono = now
-        latency = max(0, recv_ms - capture_ts)
+        capture_laptop = self.clock.to_laptop(capture_ts)
+        latency = max(0, recv_ms - (capture_ts if capture_laptop is None else capture_laptop))
         return proto.encode_json(
             proto.MsgType.STATS,
             fps=fps,
@@ -188,6 +199,7 @@ class Hub:
             capture_ts=capture_ts,
             recv_ts=recv_ms,
             phone_connected=self.phone is not None,
+            clock_synced=capture_laptop is not None,
         )
 
     async def worker_loop(self) -> None:
@@ -240,13 +252,34 @@ class Hub:
             decision="sent" if items else "none",
             message=" | ".join(texts) or None,
             dropped_since_last=frame.dropped_before,
+            clock_offset_ms=self.clock.offset_ms,
+            clock_rtt_ms=self.clock.rtt_ms,
         )
         self.recorder.record(rec, frame.jpeg)
         return rec
 
+    async def clock_loop(self) -> None:
+        """Ping the phone with the laptop clock; app.py feeds pongs to self.clock."""
+        phone: WebSocket | None = None
+        sent = 0
+        while True:
+            if self.phone is not phone:
+                phone, sent = self.phone, 0
+            if phone is not None:
+                await self._send_phone_text(proto.encode_json(proto.MsgType.PING, t0=proto.now_ms()))
+                sent += 1
+            await asyncio.sleep(CLOCK_BURST_SEC if sent < CLOCK_BURST else CLOCK_EVERY_SEC)
+
     def ensure_worker(self) -> None:
         if self.worker_task is None or self.worker_task.done():
+            # An Event binds to the first loop that waits on it; a restarted
+            # app runs on a new loop, so the new worker needs a new Event.
+            self.frame_event = asyncio.Event()
+            if self.latest_frame is not None:
+                self.frame_event.set()
             self.worker_task = asyncio.create_task(self.worker_loop(), name="saw-ai-worker")
+        if self.clock_task is None or self.clock_task.done():
+            self.clock_task = asyncio.create_task(self.clock_loop(), name="saw-clock")
 
 
 def _response_items(response: Response) -> list[Say | Play]:

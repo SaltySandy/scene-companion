@@ -45,7 +45,7 @@ Owners: A = data and lineage, B = AI/ML, C = Android and demo.
 | 1 | feat(server): carry recv_ts and count dropped frames | A | done |
 | 2 | feat(server): FrameRecord + JSONL recorder (`server/frame_record.py`, `server/recorder.py`, `SAW_RECORD=1`) | A | done |
 | 3 | feat(tools): `scripts/session_report.py` (latency p50/p95, drops, capture_ts gaps) | A | done |
-| 3a | feat(lineage): ping/pong clock sync, `clock_offset_ms`/`clock_rtt_ms` in FrameRecord | A+C | |
+| 3a | feat(lineage): ping/pong clock sync, `clock_offset_ms`/`clock_rtt_ms` in FrameRecord | A+C | done |
 | 4 | fix(android): fixed mount rotation; skip encoding while disconnected | C | |
 | 5 | feat(tools): `scripts/prelabel.py` VLM pre-labeling | B | |
 | 6 | feat(ai): `server/ai/depth.py` + `server/ai/proximity.py` (sectors, levels) | B | |
@@ -64,5 +64,5 @@ B owns `server/ai/` and `ai_hook.py`; C owns `android/` and both protocol files.
 
 `session_id, frame_key, capture_ts, recv_ts, infer_start, infer_end, model,
 sectors_m{left,center,right}, level, decision (sent|suppressed|stale|none), message,
-dropped_since_last` — written as one JSON line per processed frame to
+dropped_since_last, clock_offset_ms, clock_rtt_ms` — written as one JSON line per processed frame to
 `sessions/<session_id>/frames.jsonl`.

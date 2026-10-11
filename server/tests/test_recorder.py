@@ -26,6 +26,8 @@ SPEC_KEYS = [
     "decision",
     "message",
     "dropped_since_last",
+    "clock_offset_ms",
+    "clock_rtt_ms",
 ]
 
 
