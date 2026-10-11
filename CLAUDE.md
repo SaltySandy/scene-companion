@@ -43,7 +43,7 @@ Owners: A = data and lineage, B = AI/ML, C = Android and demo.
 | # | Commit | Owner | Status |
 |---|--------|-------|--------|
 | 1 | feat(server): carry recv_ts and count dropped frames | A | done |
-| 2 | feat(server): FrameRecord + JSONL recorder (`server/frame_record.py`, `server/recorder.py`, `SAW_RECORD=1`) | A | |
+| 2 | feat(server): FrameRecord + JSONL recorder (`server/frame_record.py`, `server/recorder.py`, `SAW_RECORD=1`) | A | done |
 | 3 | feat(tools): `scripts/session_report.py` (latency p50/p95, drops, capture_ts gaps) | A | |
 | 4 | fix(android): fixed mount rotation; skip encoding while disconnected | C | |
 | 5 | feat(tools): `scripts/prelabel.py` VLM pre-labeling | B | |

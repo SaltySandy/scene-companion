@@ -85,6 +85,7 @@ async def lifespan(_app: FastAPI):
     )
     hub.ensure_worker()
     sinks.start()
+    hub.recorder.start()
     ip = lan_ip()
     port = DEFAULT_PORT
     print()
@@ -96,12 +97,15 @@ async def lifespan(_app: FastAPI):
     print(f"  USB    : adb reverse tcp:{port} tcp:{port}")
     print(f"           then phone host 127.0.0.1:{port}")
     print(f"  Say    : curl -X POST http://{ip}:{port}/say -H 'content-type: application/json' -d '{{\"text\":\"hello\"}}'")
+    if hub.recorder.enabled:
+        print(f"  Record : {hub.recorder.path}")
     print("=" * 60)
     print()
     yield
     sinks.stop()
     if hub.worker_task:
         hub.worker_task.cancel()
+    hub.recorder.stop()  # after the worker, so its last record is flushed
 
 
 app = FastAPI(title="SAW Server", version="0.1.0", lifespan=lifespan)
@@ -121,6 +125,8 @@ async def health() -> dict[str, object]:
         "phone_connected": hub.phone is not None,
         "viewers": len(hub.viewers),
         "frames_dropped": hub.frames_dropped,
+        "recording": hub.recorder.session_id if hub.recorder.enabled else None,
+        "records_dropped": hub.recorder.records_dropped,
         "lan_ip": lan_ip(),
     }
 

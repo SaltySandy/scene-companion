@@ -6,6 +6,9 @@ __pycache__/
 .mypy_cache/
 *.egg-info/
 
+# Recorded walks: camera frames never leave the laptop.
+sessions/
+
 android/.gradle/
 android/.kotlin/
 android/build/

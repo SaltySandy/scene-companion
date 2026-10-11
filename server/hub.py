@@ -13,6 +13,8 @@ from fastapi import WebSocket
 from server import protocol as proto
 from server.ai_hook import Play, Response, Say, on_frame
 from server.event_sinks import sinks
+from server.frame_record import FrameRecord
+from server.recorder import Recorder
 
 log = logging.getLogger("saw")
 
@@ -38,6 +40,7 @@ class Hub:
     worker_task: asyncio.Task[None] | None = None
     frames_dropped: int = 0  # total overwritten in the latest-frame slot
     _drops_since_take: int = 0
+    recorder: Recorder = field(default_factory=Recorder.disabled)
 
     async def attach_phone(self, ws: WebSocket) -> None:
         if self.phone is not None:
@@ -114,14 +117,7 @@ class Hub:
         log.info("play mime=%s bytes=%d urgent=%s", mime, len(audio_bytes), urgent)
 
     async def apply_response(self, response: Response) -> None:
-        if response is None:
-            return
-        items: list[Say | Play]
-        if isinstance(response, (Say, Play)):
-            items = [response]
-        else:
-            items = list(response)
-        for item in items:
+        for item in _response_items(response):
             if isinstance(item, Say):
                 await self.say(item.text, urgent=item.urgent)
             elif isinstance(item, Play):
@@ -203,22 +199,71 @@ class Hub:
             frame = self.take_latest()
             if frame is None:
                 continue
-            try:
-                result = await on_frame(frame.jpeg, frame.capture_ts)
-                await self.apply_response(result)
-            except asyncio.CancelledError:
-                raise
-            except Exception:
-                log.exception("on_frame failed")
-                sentry_sdk.capture_exception()
+            await self.process_frame(frame)
+
+    async def process_frame(self, frame: PendingFrame) -> FrameRecord:
+        """Run the hook on one frame, send its response, record the lineage.
+
+        A failing hook still gets a record, so a gap in frames.jsonl always
+        means a dropped frame, never a crash.
+        """
+        infer_start = proto.now_ms()
+        try:
+            result = await on_frame(frame.jpeg, frame.capture_ts)
+        except asyncio.CancelledError:
+            raise
+        except Exception:
+            log.exception("on_frame failed")
+            sentry_sdk.capture_exception()
+            result = None
+        infer_end = proto.now_ms()
+        try:
+            await self.apply_response(result)
+        except asyncio.CancelledError:
+            raise
+        except Exception:
+            log.exception("apply_response failed")
+            sentry_sdk.capture_exception()
+            result = None
+        items = _response_items(result)
+        texts = [str(item.text).strip() for item in items if isinstance(item, Say)]
+        rec = FrameRecord(
+            session_id=self.recorder.session_id,
+            frame_key=frame.capture_ts,
+            capture_ts=frame.capture_ts,
+            recv_ts=frame.recv_ts,
+            infer_start=infer_start,
+            infer_end=infer_end,
+            model=None,
+            sectors_m=None,
+            level=None,
+            decision="sent" if items else "none",
+            message=" | ".join(texts) or None,
+            dropped_since_last=frame.dropped_before,
+        )
+        self.recorder.record(rec, frame.jpeg)
+        return rec
 
     def ensure_worker(self) -> None:
         if self.worker_task is None or self.worker_task.done():
             self.worker_task = asyncio.create_task(self.worker_loop(), name="saw-ai-worker")
 
 
+def _response_items(response: Response) -> list[Say | Play]:
+    """Flatten a hook response to the items say()/play() would actually send."""
+    if response is None:
+        return []
+    items = [response] if isinstance(response, (Say, Play)) else list(response)
+    return [
+        item
+        for item in items
+        if (isinstance(item, Say) and str(item.text).strip())
+        or (isinstance(item, Play) and item.audio_bytes)
+    ]
+
+
 # Process-wide hub used by HTTP handlers and the hook helpers.
-hub = Hub()
+hub = Hub(recorder=Recorder.from_env())
 
 
 async def say(text: str, urgent: bool = False) -> None:
