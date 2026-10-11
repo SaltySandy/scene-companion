@@ -96,9 +96,7 @@ class StreamClient(
                 "connecting"
             },
         )
-        val host = prefs.parsedHost()
-        val port = prefs.parsedPort()
-        val url = "ws://$host:$port/v1/stream"
+        val url = StreamUrl.build(prefs.hostPort)
         Log.i(TAG, "connecting $url")
         val req = Request.Builder().url(url).build()
         val ws = http.newWebSocket(req, object : WebSocketListener() {
