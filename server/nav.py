@@ -98,7 +98,12 @@ _default: Navigator | None = None
 
 
 def default_navigator(name: str | None = None) -> Navigator:
+    """The shared navigator. An explicit ``name`` (e.g. ``evaluate(navigator=...)``) sticks:
+    later ``analyze()`` calls with no name keep it instead of falling back to
+    ``SAW_NAVIGATOR`` / baseline."""
     global _default
+    if name is None and _default is not None:
+        return _default
     want = (name or os.environ.get("SAW_NAVIGATOR") or "baseline").strip()
     if _default is None or getattr(_default, "name", None) != want:
         _default = get_navigator(want)
@@ -368,6 +373,16 @@ class BaselineNavigator:
 
 
 register("baseline", BaselineNavigator)
+
+
+def _exitpath_factory() -> Navigator:
+    # Lazy: needs numpy/scipy/onnxruntime + the depth ONNX (see server/exit_nav.py).
+    from server.exit_nav import ExitPathNavigator
+
+    return ExitPathNavigator()
+
+
+register("exitpath", _exitpath_factory)
 
 
 def on_frame_nav(jpeg_bytes: bytes) -> NavResult | None:
