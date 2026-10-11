@@ -6,10 +6,7 @@ import os
 
 import pytest
 
-# Force the demo stub to speak quickly so the test stays short.
-os.environ["SAW_DEMO_ANNOUNCE_SEC"] = "0.3"
-
-from server.ai_hook import reset_demo_state  # noqa: E402
+from server.ai_hook import reset_demo_state
 
 
 @pytest.mark.asyncio
@@ -21,6 +18,8 @@ async def test_fake_phone_receives_demo_say() -> None:
     from server.app import app
     from server.tests.fake_client import run_fake_client
 
+    prev = os.environ.get("SAW_DEMO_ANNOUNCE_SEC")
+    os.environ["SAW_DEMO_ANNOUNCE_SEC"] = "0.3"
     reset_demo_state()
     config = uvicorn.Config(app, host="127.0.0.1", port=18765, log_level="warning")
     server = uvicorn.Server(config)
@@ -40,6 +39,10 @@ async def test_fake_phone_receives_demo_say() -> None:
     finally:
         server.should_exit = True
         await task
+        if prev is None:
+            os.environ.pop("SAW_DEMO_ANNOUNCE_SEC", None)
+        else:
+            os.environ["SAW_DEMO_ANNOUNCE_SEC"] = prev
 
     assert result["hello_ack"] is True
     assert result["frames_sent"] == 12

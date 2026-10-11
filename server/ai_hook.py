@@ -40,6 +40,11 @@ class Play:
 Response = Say | Play | Sequence[Say | Play] | None
 
 # Demo: announce roughly every N seconds so testers hear the loop.
+# Re-read each call so tests can disable it without reloading the module.
+def _announce_every_sec() -> float:
+    return float(os.environ.get("SAW_DEMO_ANNOUNCE_SEC", "5"))
+
+
 ANNOUNCE_EVERY_SEC = float(os.environ.get("SAW_DEMO_ANNOUNCE_SEC", "5"))
 
 _frame_times: deque[float] = deque()
@@ -61,7 +66,8 @@ async def on_frame(jpeg_bytes: bytes, ts: int) -> Response:
     fps = len(_frame_times)
 
     global _last_announce
-    if ANNOUNCE_EVERY_SEC > 0 and now - _last_announce >= ANNOUNCE_EVERY_SEC:
+    every = _announce_every_sec()
+    if every > 0 and now - _last_announce >= every:
         _last_announce = now
         return Say(f"frame received, {fps} per second")
 

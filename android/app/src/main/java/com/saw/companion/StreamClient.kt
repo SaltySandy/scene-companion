@@ -46,6 +46,15 @@ class StreamClient(
         private set
     private var backoffMs = 1_000L
     private var lastSpokenState = ""
+    val clockSync = ClockSync()
+    private val pingRunnable = object : Runnable {
+        override fun run() {
+            sendPing()
+            if (running && connected) {
+                main.postDelayed(this, PING_INTERVAL_MS)
+            }
+        }
+    }
 
     fun start() {
         running = true
@@ -55,6 +64,7 @@ class StreamClient(
     fun stop() {
         running = false
         connected = false
+        main.removeCallbacks(pingRunnable)
         main.removeCallbacksAndMessages(null)
         socketRef.getAndSet(null)?.cancel()
         setState(ConnectionState.STOPPED, "stopped")
@@ -134,6 +144,9 @@ class StreamClient(
                     ),
                 )
                 sendConfig(webSocket)
+                clockSync.reset()
+                main.removeCallbacks(pingRunnable)
+                main.post(pingRunnable)
                 setState(ConnectionState.CONNECTED, "connected")
                 listener.onHaptic(true)
                 SawSentry.breadcrumb("connected")
@@ -175,7 +188,8 @@ class StreamClient(
             Protocol.TYPE_SAY -> {
                 val spoken = obj.optString("text")
                 val urgent = obj.optBoolean("urgent", false)
-                speech.enqueueSay(spoken, urgent)
+                val captureTs = if (obj.has("capture_ts")) obj.optLong("capture_ts") else null
+                speech.enqueueSay(spoken, urgent, captureTs, Protocol.nowMs())
             }
             Protocol.TYPE_STATUS -> {
                 if (obj.optString("msg") == "audio") {
@@ -183,7 +197,63 @@ class StreamClient(
                     pendingUrgentClip = obj.optBoolean("urgent", false)
                 }
             }
-            Protocol.TYPE_PONG, Protocol.TYPE_HELLO_ACK -> Unit
+            Protocol.TYPE_PONG -> onPong(obj)
+            Protocol.TYPE_HELLO_ACK -> Unit
+        }
+    }
+
+    fun sendTtsStart(captureTs: Long?, ttsStartTs: Long, sayRecvTs: Long?) {
+        if (captureTs == null) return
+        val ws = socketRef.get() ?: return
+        if (!connected) return
+        try {
+            ws.send(
+                Protocol.encodeJson(
+                    Protocol.TYPE_TTS_START,
+                    TtsTiming.reportFields(captureTs, ttsStartTs, sayRecvTs ?: ttsStartTs),
+                ),
+            )
+        } catch (_: Exception) {
+        }
+    }
+
+    private fun sendPing() {
+        val ws = socketRef.get() ?: return
+        if (!connected) return
+        try {
+            ws.send(
+                Protocol.encodeJson(
+                    Protocol.TYPE_PING,
+                    mapOf("t" to Protocol.nowMs(), "t0" to Protocol.nowMs()),
+                ),
+            )
+        } catch (_: Exception) {
+        }
+    }
+
+    private fun onPong(obj: JSONObject) {
+        if (!obj.has("t0") || !obj.has("t1") || !obj.has("t2")) return
+        val t0 = obj.optLong("t0")
+        val t1 = obj.optLong("t1")
+        val t2 = obj.optLong("t2")
+        val t3 = Protocol.nowMs()
+        val best = clockSync.consider(t0, t1, t2, t3)
+        val ws = socketRef.get() ?: return
+        try {
+            ws.send(
+                Protocol.encodeJson(
+                    Protocol.TYPE_SYNC,
+                    mapOf(
+                        "t0" to t0,
+                        "t1" to t1,
+                        "t2" to t2,
+                        "t3" to t3,
+                        "rtt_ms" to best.rttMs,
+                        "offset_ms" to best.offsetMs,
+                    ),
+                ),
+            )
+        } catch (_: Exception) {
         }
     }
 
@@ -230,5 +300,6 @@ class StreamClient(
 
     companion object {
         private const val TAG = "SawStream"
+        const val PING_INTERVAL_MS = 2_000L
     }
 }

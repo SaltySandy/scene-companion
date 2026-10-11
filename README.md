@@ -76,7 +76,7 @@ async def on_frame(jpeg_bytes: bytes, ts: int) -> Say | Play | None:
     ...
 ```
 
-A background worker calls this with **only the latest frame**. If your model is slower than the camera, older JPEGs are dropped — the WebSocket never waits.
+A background worker calls this with **only the latest frame**. If your model is slower than the camera, older JPEGs are dropped — the WebSocket never waits. A second, isolated worker runs the deterministic proximity path so a 1–4 s vision LLM cannot delay a one-foot warning.
 
 Talk back to the phone from the hook (return value) or from anywhere:
 
@@ -129,13 +129,13 @@ If a frame is still on the phone’s outbound WebSocket queue, the next JPEG is 
 
 Every text message is `{"v":1,"type":"..."}`.
 
-Phone → laptop: `hello`, `config` (`width`, `height`, `fps`, `quality`, `mic`), `ping`.
+Phone → laptop: `hello`, `config` (`width`, `height`, `fps`, `quality`, `mic`), `ping` (`t0`), `sync` (`t0,t1,t2,t3`), `tts_start` (`capture_ts`, `tts_start_ts`, `say_recv_ts`, `e2e_ms`).
 
 Laptop → phone:
 
 - `hello_ack`
-- `say` — `{"v":1,"type":"say","text":"...","urgent":false}` (Android TTS; lowest latency, works offline)
-- `pong`
+- `say` — `{"v":1,"type":"say","text":"...","urgent":false,"capture_ts":...}` (Android TTS; lowest latency, works offline). `capture_ts` is the frame the speech is about; the phone reports TTS start against it.
+- `pong` — echoes `t` / `t0` and adds laptop `t1` (recv) and `t2` (send) for NTP-style sync
 - `status` with `msg="audio"` may precede an `AUDIO_CLIP` and can carry `urgent`
 
 HTTP helpers (same laptop):
@@ -143,6 +143,52 @@ HTTP helpers (same laptop):
 - `POST /say` JSON `{"text":"...","urgent":false}` or raw text
 - `POST /play` raw audio body, `Content-Type` = mime
 - `GET /health`, `GET /`
+- `GET /latency` — rolling e2e p50/p95, stage breakdown, clock offset, flash result, proximity snapshot
+- `POST /flash` — arm the on-demand flash detector (`{"t": laptop_ms}` optional)
+
+---
+
+## Latency
+
+The figure the warning uses is **capture → TTS actually starts**, on the **phone clock**. The server echoes each frame’s capture timestamp in `say`; the phone measures until `UtteranceProgressListener.onStart` and sends `tts_start`. Subtracting phone and laptop wall clocks is not used for that number.
+
+**True capture time.** CameraX `imageInfo.timestamp` is converted to wall-clock using `elapsedRealtime` or uptime. If the device’s timestamp source is neither (or the sample is implausibly old/future), the analyzer falls back to `System.currentTimeMillis()`.
+
+**Clock offset.** The phone pings every 2 s. The server replies with `t1`/`t2`. The phone sends `sync`. The **minimum-RTT** sample is kept (NTP offset: `laptop ≈ phone + offset`). Asymmetric paths (cellular tunnels) bias the offset; e2e on the phone clock stays honest. Stages (uplink, queue, process, downlink, TTS) use the offset and are shown on the viewer and `GET /latency`.
+
+**Flash test (on-demand, not always on).** Point the phone at the laptop viewer. Click **Flash test**. The page goes white at a known laptop time; the server arms a brightness check. The first near-white frame gives **scene → processed** on the laptop clock. `POST /flash` does the same for scripts.
+
+The viewer “Latency (stamp)” line is uplink after sync (or the old `recv - capture` figure before the first ping). Prefer e2e p50/p95.
+
+---
+
+## Proximity warning
+
+A fast, deterministic estimator (`server/proximity.py`, default `corridor_looming`) looks at the center walking corridor: dark / high-contrast mass + pinhole size (`distance = assumed_width × focal / apparent_width`) and fill. Same JPEG → same meters. No weights are downloaded; pip-install **numpy** and **pillow** (already in `server/requirements.txt`). The estimator is a `ProximityEstimator` protocol — drop in a depth model by implementing `estimate(jpeg)` and setting `SAW_PROXIMITY_ESTIMATOR` or `engine.set_estimator(...)`.
+
+It tracks closing speed (EMA + median, reset on a >500 ms gap so a quality-switch camera rebind cannot look like a slam). It warns when
+
+```
+predicted = distance - closing_speed × (frame_age + remaining_p95) / 1000
+```
+
+is ≤ **0.3 m** (one foot). `urgent=True` so the phone interrupts whatever was speaking. Cooldown 2 s + 0.35 m hysteresis stop flapping. Frames older than 800 ms are dropped as stale.
+
+| Env | Default | Meaning |
+| --- | --- | --- |
+| `SAW_PROXIMITY_ENABLED` | `1` | Set `0` to disable |
+| `SAW_PROXIMITY_THRESHOLD_M` | `0.3` | Warn threshold (meters) |
+| `SAW_PROXIMITY_HYSTERESIS_M` | `0.35` | Re-arm only after predicted clears this extra |
+| `SAW_PROXIMITY_COOLDOWN_MS` | `2000` | Min time between spoken warnings |
+| `SAW_PROXIMITY_STALE_MS` | `800` | Drop frames older than this |
+| `SAW_PROXIMITY_OBJECT_WIDTH_M` | `0.6` | Assumed obstacle width for the pinhole |
+| `SAW_PROXIMITY_ESTIMATOR` | `corridor_looming` | Pluggable name |
+| `SAW_DEFAULT_REMAINING_MS` | `250` | Used before enough `tts_start` samples exist |
+| `SAW_PROXIMITY_TEXT` | `stop, obstacle ahead` | Spoken warning |
+
+The LLM / demo stub in `ai_hook.py` is unchanged and runs beside this path.
+
+Field checks (flash test, walk-toward-a-wall, USB vs Wi-Fi vs tunnel) are in **`TESTING.md`**.
 
 ---
 
@@ -213,12 +259,15 @@ python scripts/tiger_smoke.py
 
 ## Known limitations
 
-- No on-device model. The AI is a stub plus a commented API example.
-- Phone and laptop clocks are not synced; “latency” on the viewer is `recv_ts - capture_ts` and can look wrong across Wi-Fi. Inter-frame time is the honest number.
-- Cleartext `ws://` only (hackathon LAN / USB). No TLS.
+- No on-device model. The AI is a stub plus a commented API example. The proximity path is a corridor heuristic, not a trained depth model: glass, night, and off-axis obstacles will be missed or mis-ranged.
+- Assumed obstacle width (0.6 m) is a prior. A wall that fills the frame is forced near; a thin pole can read far.
+- Clock **offset** is min-RTT NTP and is biased by uplink/downlink asymmetry (typical on a cellular tunnel). The warning does **not** use that offset for e2e; it uses phone-clock capture → TTS start.
+- Before the first few `tts_start` reports, remaining latency is the 250 ms default.
+- Cleartext `ws://` only on LAN / USB. Tunnel URLs use `wss://` (see the address field). No auth on the socket.
 - Mic chunks are accepted by the server and not processed.
 - Emulator camera is a fake scene if you use one; a real phone is the intended client.
 - JPEG encode + rotate on the phone costs a few milliseconds per frame at 640×480.
+- Flash test only works if the phone is pointed at the laptop screen.
 
 ## Top 3 next steps for the AI
 

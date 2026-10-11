@@ -90,6 +90,26 @@ def test_binary_message_encode_helper() -> None:
     assert proto.decode_binary(msg.encode()).payload == b"abc"
 
 
+def test_say_can_echo_capture_ts() -> None:
+    text = proto.encode_json(proto.MsgType.SAY, text="stop", urgent=True, capture_ts=99)
+    obj = proto.decode_json(text)
+    assert obj["capture_ts"] == 99
+    assert obj["urgent"] is True
+
+
+def test_ping_pong_sync_and_tts_types() -> None:
+    ping = proto.decode_json(proto.encode_json(proto.MsgType.PING, t0=1, t=1))
+    assert ping["type"] == "ping" and ping["t0"] == 1
+    pong = proto.decode_json(proto.encode_json(proto.MsgType.PONG, t0=1, t1=2, t2=3, t=1))
+    assert pong["t1"] == 2 and pong["t2"] == 3
+    sync = proto.decode_json(proto.encode_json(proto.MsgType.SYNC, t0=1, t1=2, t2=3, t3=4))
+    assert sync["type"] == "sync" and sync["t3"] == 4
+    tts = proto.decode_json(
+        proto.encode_json(proto.MsgType.TTS_START, capture_ts=9, tts_start_ts=19, e2e_ms=10)
+    )
+    assert tts["type"] == "tts_start" and tts["e2e_ms"] == 10
+
+
 def test_mime_flag_mapping() -> None:
     assert proto.mime_to_flag("audio/mpeg") == proto.AudioFlag.MP3
     assert proto.mime_to_flag("audio/wav") == proto.AudioFlag.WAV

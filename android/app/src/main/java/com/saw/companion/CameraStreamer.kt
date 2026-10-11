@@ -1,6 +1,7 @@
 package com.saw.companion
 
 import android.content.Context
+import android.os.SystemClock
 import android.util.Log
 import android.util.Size
 import androidx.camera.core.CameraSelector
@@ -94,13 +95,19 @@ class CameraStreamer(
         analysis.setAnalyzer(analysisExecutor) { image ->
             try {
                 val now = System.currentTimeMillis()
+                val capture = CaptureClock.wallMsFromSensor(
+                    sensorNs = image.imageInfo.timestamp,
+                    nowWallMs = now,
+                    nowElapsedNs = SystemClock.elapsedRealtimeNanos(),
+                    nowUptimeNs = SystemClock.uptimeMillis() * 1_000_000L,
+                )
                 val minIntervalMs = 1000L / prefs.fps.coerceIn(1, 15)
                 if (now - lastSentMs < minIntervalMs) return@setAnalyzer
                 if (!capturing.compareAndSet(false, true)) return@setAnalyzer
                 try {
                     val jpeg = YuvJpeg.toJpeg(image, prefs.quality)
                     if (jpeg != null) {
-                        val sent = onJpeg(jpeg, now)
+                        val sent = onJpeg(jpeg, capture.wallMs)
                         if (sent) lastSentMs = now
                     }
                 } catch (e: Exception) {

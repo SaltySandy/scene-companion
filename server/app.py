@@ -20,6 +20,8 @@ from sentry_sdk.integrations.fastapi import FastApiIntegration
 from server import protocol as proto
 from server.event_sinks import sinks
 from server.hub import hub, play, say
+from server.latency import book as latency_book
+from server.proximity import engine as prox_engine
 
 log = logging.getLogger("saw")
 STATIC_DIR = Path(__file__).resolve().parent / "static"
@@ -100,8 +102,9 @@ async def lifespan(_app: FastAPI):
     print()
     yield
     sinks.stop()
-    if hub.worker_task:
-        hub.worker_task.cancel()
+    for task in (hub.worker_task, hub.prox_task):
+        if task:
+            task.cancel()
 
 
 app = FastAPI(title="SAW Server", version="0.1.0", lifespan=lifespan)
@@ -121,7 +124,36 @@ async def health() -> dict[str, object]:
         "phone_connected": hub.phone is not None,
         "viewers": len(hub.viewers),
         "lan_ip": lan_ip(),
+        "proximity": prox_engine.estimator.name if prox_engine.enabled else "off",
     }
+
+
+@app.get("/latency")
+async def latency() -> dict[str, object]:
+    snap = latency_book.snapshot()
+    snap["proximity"] = prox_engine.snapshot()
+    return snap
+
+
+@app.post("/flash")
+async def http_flash(request: Request) -> JSONResponse:
+    """Arm the on-demand flash detector. Optional JSON ``{"t": laptop_ms}``."""
+    flash_ts = None
+    if "application/json" in request.headers.get("content-type", ""):
+        try:
+            body = await request.json()
+        except Exception:
+            body = {}
+        if isinstance(body, dict) and body.get("t") is not None:
+            try:
+                flash_ts = int(body["t"])
+            except (TypeError, ValueError):
+                flash_ts = None
+    armed_at = latency_book.arm_flash(flash_ts)
+    await hub._broadcast_viewers_text(
+        proto.encode_json(proto.MsgType.FLASH, armed=True, flash_ts=armed_at)
+    )
+    return JSONResponse({"ok": True, "armed": True, "flash_ts": armed_at})
 
 
 @app.post("/say")
@@ -129,11 +161,18 @@ async def http_say(request: Request) -> JSONResponse:
     content_type = request.headers.get("content-type", "")
     urgent = False
     text = ""
+    capture_ts = None
     if "application/json" in content_type:
         body = await request.json()
         if isinstance(body, dict):
             text = str(body.get("text") or body.get("message") or "")
             urgent = bool(body.get("urgent", False))
+            raw_ts = body.get("capture_ts")
+            if raw_ts is not None:
+                try:
+                    capture_ts = int(raw_ts)
+                except (TypeError, ValueError):
+                    capture_ts = None
         else:
             text = str(body)
     else:
@@ -141,8 +180,8 @@ async def http_say(request: Request) -> JSONResponse:
         urgent = request.query_params.get("urgent", "").lower() in {"1", "true", "yes"}
     if not text.strip():
         return JSONResponse({"ok": False, "error": "empty text"}, status_code=400)
-    await say(text, urgent=urgent)
-    return JSONResponse({"ok": True, "text": text.strip(), "urgent": urgent})
+    await say(text, urgent=urgent, capture_ts=capture_ts)
+    return JSONResponse({"ok": True, "text": text.strip(), "urgent": urgent, "capture_ts": capture_ts})
 
 
 @app.post("/recall")
@@ -236,7 +275,25 @@ async def viewer_stream(ws: WebSocket) -> None:
                     continue
                 try:
                     if obj["type"] == proto.MsgType.SAY:
-                        await say(str(obj.get("text") or ""), urgent=bool(obj.get("urgent", False)))
+                        cap = obj.get("capture_ts")
+                        try:
+                            cap_i = int(cap) if cap is not None else None
+                        except (TypeError, ValueError):
+                            cap_i = None
+                        await say(
+                            str(obj.get("text") or ""),
+                            urgent=bool(obj.get("urgent", False)),
+                            capture_ts=cap_i,
+                        )
+                    elif obj["type"] == proto.MsgType.FLASH:
+                        try:
+                            flash_ts = int(obj["t"]) if obj.get("t") is not None else None
+                        except (TypeError, ValueError):
+                            flash_ts = None
+                        armed_at = latency_book.arm_flash(flash_ts)
+                        await ws.send_text(
+                            proto.encode_json(proto.MsgType.FLASH, armed=True, flash_ts=armed_at)
+                        )
                 except Exception:
                     log.exception("viewer message failed")
                     sentry_sdk.capture_exception()
@@ -257,7 +314,46 @@ async def _handle_phone_text(_ws: WebSocket, text: str) -> None:
         return
     kind = obj["type"]
     if kind == proto.MsgType.PING:
-        await _ws_safe_send_text(_ws, proto.encode_json(proto.MsgType.PONG, t=obj.get("t")))
+        t0 = obj.get("t0", obj.get("t"))
+        t1 = proto.now_ms()
+        t2 = proto.now_ms()
+        await _ws_safe_send_text(
+            _ws,
+            proto.encode_json(proto.MsgType.PONG, t=t0, t0=t0, t1=t1, t2=t2),
+        )
+    elif kind == proto.MsgType.SYNC:
+        try:
+            t0 = float(obj["t0"])
+            t1 = float(obj["t1"])
+            t2 = float(obj["t2"])
+            t3 = float(obj["t3"])
+        except (KeyError, TypeError, ValueError):
+            log.warning("bad sync from phone: %s", obj)
+            return
+        result = latency_book.consider_sync(t0, t1, t2, t3)
+        log.info(
+            "clock sync offset=%.1fms rtt=%.1fms (sample rtt=%.1f)",
+            result["offset_ms"],
+            result["rtt_ms"],
+            result["sample_rtt_ms"],
+        )
+    elif kind == proto.MsgType.TTS_START:
+        try:
+            capture_ts = int(obj["capture_ts"])
+            tts_start_ts = int(obj["tts_start_ts"])
+        except (KeyError, TypeError, ValueError):
+            log.warning("bad tts_start from phone: %s", obj)
+            return
+        say_recv = obj.get("say_recv_ts")
+        try:
+            say_recv_i = int(say_recv) if say_recv is not None else None
+        except (TypeError, ValueError):
+            say_recv_i = None
+        measured = latency_book.note_tts_start(capture_ts, tts_start_ts, say_recv_i)
+        log.info("tts_start e2e=%.0fms capture_ts=%s", measured["e2e_ms"], capture_ts)
+        await hub._broadcast_viewers_text(
+            proto.encode_json(proto.MsgType.LATENCY, **latency_book.snapshot())
+        )
     elif kind == proto.MsgType.HELLO:
         log.info("phone hello: %s", obj)
     elif kind == proto.MsgType.CONFIG:

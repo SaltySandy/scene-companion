@@ -28,7 +28,10 @@ class StreamService : LifecycleService() {
     override fun onCreate() {
         super.onCreate()
         prefs = Prefs(this)
-        speech = SpeechQueue(this)
+        var streamRef: StreamClient? = null
+        speech = SpeechQueue(this) { capture, ttsStart, sayRecv ->
+            streamRef?.sendTtsStart(capture, ttsStart, sayRecv)
+        }
         speech.start()
         instance = this
         running = true
@@ -52,6 +55,7 @@ class StreamService : LifecycleService() {
                 pulse(if (connected) 40 else 80)
             }
         })
+        streamRef = streamClient
         client = streamClient
         streamClient.start()
         camera = CameraStreamer(this, this, prefs) { jpeg, ts ->

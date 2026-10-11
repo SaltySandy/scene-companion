@@ -33,6 +33,10 @@ object Protocol {
     const val TYPE_STATS = "stats"
     const val TYPE_MIC = "mic"
     const val TYPE_ERROR = "error"
+    const val TYPE_TTS_START = "tts_start"
+    const val TYPE_SYNC = "sync"
+    const val TYPE_FLASH = "flash"
+    const val TYPE_LATENCY = "latency"
 
     data class BinaryMessage(
         val kind: Int,

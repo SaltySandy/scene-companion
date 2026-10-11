@@ -1,4 +1,4 @@
-"""Shared state: phone sockets, viewer sockets, say/play helpers, latest-frame worker."""
+"""Shared state: phone sockets, viewer sockets, say/play helpers, latest-frame workers."""
 
 from __future__ import annotations
 
@@ -13,19 +13,33 @@ from fastapi import WebSocket
 from server import protocol as proto
 from server.ai_hook import Play, Response, Say, on_frame
 from server.event_sinks import sinks
+from server.latency import book as latency_book
+from server.proximity import engine as prox_engine
+from server.proximity import mean_luminance
 
 log = logging.getLogger("saw")
+
+
+@dataclass(frozen=True)
+class Frame:
+    jpeg: bytes
+    capture_ts: int
+    recv_ms: int
 
 
 @dataclass
 class Hub:
     phone: WebSocket | None = None
     viewers: set[WebSocket] = field(default_factory=set)
-    latest_frame: tuple[bytes, int] | None = None
+    latest_frame: Frame | None = None
+    latest_prox: Frame | None = None
     frame_event: asyncio.Event = field(default_factory=asyncio.Event)
+    prox_event: asyncio.Event = field(default_factory=asyncio.Event)
     frames_in_window: list[float] = field(default_factory=list)
     last_recv_mono: float = 0.0
     worker_task: asyncio.Task[None] | None = None
+    prox_task: asyncio.Task[None] | None = None
+    last_process_ctx: dict[str, int] | None = None
 
     async def attach_phone(self, ws: WebSocket) -> None:
         if self.phone is not None:
@@ -34,6 +48,9 @@ class Hub:
             except Exception:
                 pass
         self.phone = ws
+        # A new session: drop motion history so a reconnect cannot inherit speed.
+        prox_engine.samples.clear()
+        prox_engine.closing_mps = 0.0
         log.info("phone connected")
         sinks.log_event("connect", "phone connected")
 
@@ -49,21 +66,50 @@ class Hub:
     def detach_viewer(self, ws: WebSocket) -> None:
         self.viewers.discard(ws)
 
-    def submit_frame(self, jpeg: bytes, ts: int) -> None:
-        """Keep only the latest JPEG. The worker never queues a backlog."""
-        self.latest_frame = (jpeg, ts)
+    def submit_frame(self, jpeg: bytes, ts: int, recv_ms: int | None = None) -> None:
+        """Keep only the latest JPEG on each path. Workers never queue a backlog."""
+        recv = int(recv_ms if recv_ms is not None else proto.now_ms())
+        frame = Frame(jpeg=jpeg, capture_ts=int(ts), recv_ms=recv)
+        self.latest_frame = frame
         self.frame_event.set()
+        self.latest_prox = frame
+        self.prox_event.set()
+        latency_book.note_frame(frame.capture_ts, frame.recv_ms)
 
-    async def say(self, text: str, urgent: bool = False) -> None:
+    async def say(
+        self,
+        text: str,
+        urgent: bool = False,
+        capture_ts: int | None = None,
+        hazard: bool | None = None,
+    ) -> None:
         if not text or not str(text).strip():
             return
-        msg = proto.encode_json(proto.MsgType.SAY, text=str(text).strip(), urgent=bool(urgent))
-        await self._send_phone_text(msg)
-        await self._broadcast_viewers_text(
-            proto.encode_json(proto.MsgType.SAY, text=str(text).strip(), urgent=bool(urgent))
+        fields: dict[str, Any] = {
+            "text": str(text).strip(),
+            "urgent": bool(urgent),
+        }
+        if capture_ts is not None:
+            fields["capture_ts"] = int(capture_ts)
+        msg = proto.encode_json(proto.MsgType.SAY, **fields)
+        sent_ms = proto.now_ms()
+        ctx = self.last_process_ctx or {}
+        latency_book.note_say_sent(
+            capture_ts,
+            sent_ms,
+            recv_ms=ctx.get("recv_ms"),
+            process_start_ms=ctx.get("process_start_ms"),
+            process_end_ms=ctx.get("process_end_ms"),
         )
-        log.info("say urgent=%s: %s", urgent, text)
-        sinks.log_event("say", str(text).strip(), meta={"urgent": bool(urgent)})
+        await self._send_phone_text(msg)
+        await self._broadcast_viewers_text(proto.encode_json(proto.MsgType.SAY, **fields))
+        log.info("say urgent=%s capture_ts=%s: %s", urgent, capture_ts, text)
+        sinks.log_event(
+            "say",
+            str(text).strip(),
+            hazard=bool(hazard) if hazard is not None else bool(urgent),
+            meta={"urgent": bool(urgent), "capture_ts": capture_ts},
+        )
 
     async def play(self, audio_bytes: bytes, mime: str = "audio/wav", urgent: bool = False) -> None:
         if not audio_bytes:
@@ -81,7 +127,7 @@ class Hub:
         await self._send_phone_bytes(envelope)
         log.info("play mime=%s bytes=%d urgent=%s", mime, len(audio_bytes), urgent)
 
-    async def apply_response(self, response: Response) -> None:
+    async def apply_response(self, response: Response, capture_ts: int | None = None) -> None:
         if response is None:
             return
         items: list[Say | Play]
@@ -91,7 +137,7 @@ class Hub:
             items = list(response)
         for item in items:
             if isinstance(item, Say):
-                await self.say(item.text, urgent=item.urgent)
+                await self.say(item.text, urgent=item.urgent, capture_ts=capture_ts)
             elif isinstance(item, Play):
                 await self.play(item.audio_bytes, mime=item.mime, urgent=item.urgent)
 
@@ -150,7 +196,15 @@ class Hub:
         if self.last_recv_mono:
             inter = (now - self.last_recv_mono) * 1000.0
         self.last_recv_mono = now
-        latency = max(0, recv_ms - capture_ts)
+        # Stamp-minus-recv is only honest after clock sync; still published
+        # as latency_ms for back-compat. Prefer e2e_ms / stages from /latency.
+        offset = latency_book.clock_offset_ms()
+        if offset is not None:
+            latency = max(0, int(round(recv_ms - (capture_ts + offset))))
+        else:
+            latency = max(0, recv_ms - capture_ts)
+        snap = latency_book.snapshot()
+        prox = prox_engine.snapshot()
         return proto.encode_json(
             proto.MsgType.STATS,
             fps=fps,
@@ -160,10 +214,19 @@ class Hub:
             capture_ts=capture_ts,
             recv_ts=recv_ms,
             phone_connected=self.phone is not None,
+            e2e_p50_ms=snap["e2e_ms"]["p50"],
+            e2e_p95_ms=snap["e2e_ms"]["p95"],
+            remaining_p95_ms=snap["remaining_p95_ms"],
+            clock_offset_ms=snap["clock"]["offset_ms"],
+            clock_rtt_ms=snap["clock"]["rtt_ms"],
+            proximity_m=prox["last_distance_m"],
+            predicted_m=prox["last_predicted_m"],
+            closing_mps=prox["last_closing_mps"],
+            prox_ms=prox["last_process_ms"],
         )
 
     async def worker_loop(self) -> None:
-        """Process only the latest submitted frame; never queue a backlog."""
+        """LLM / demo path. Latest frame only; a slow model never stalls the socket."""
         log.info("AI worker started")
         while True:
             await self.frame_event.wait()
@@ -172,28 +235,102 @@ class Hub:
             self.latest_frame = None
             if item is None:
                 continue
-            jpeg, ts = item
             try:
-                result = await on_frame(jpeg, ts)
-                await self.apply_response(result)
+                result = await on_frame(item.jpeg, item.capture_ts)
+                await self.apply_response(result, capture_ts=item.capture_ts)
             except asyncio.CancelledError:
                 raise
             except Exception:
                 log.exception("on_frame failed")
                 sentry_sdk.capture_exception()
 
+    async def prox_loop(self) -> None:
+        """Fast deterministic path. Isolated from the LLM so a 2s vision call cannot delay a warning."""
+        log.info("proximity worker started")
+        while True:
+            await self.prox_event.wait()
+            self.prox_event.clear()
+            item = self.latest_prox
+            self.latest_prox = None
+            if item is None:
+                continue
+            process_start = proto.now_ms()
+            try:
+                luma = await asyncio.to_thread(mean_luminance, item.jpeg)
+                if luma is not None:
+                    flash = latency_book.note_brightness(luma, process_start)
+                    if flash is not None:
+                        log.info(
+                            "flash detected brightness=%.1f scene_to_processed=%dms",
+                            flash.brightness,
+                            flash.scene_to_processed_ms,
+                        )
+                        await self._broadcast_viewers_text(
+                            proto.encode_json(
+                                proto.MsgType.FLASH,
+                                detected=True,
+                                scene_to_processed_ms=flash.scene_to_processed_ms,
+                                brightness=round(flash.brightness, 1),
+                            )
+                        )
+                decision = await asyncio.to_thread(
+                    prox_engine.process_jpeg,
+                    item.jpeg,
+                    item.capture_ts,
+                    item.recv_ms,
+                    proto.now_ms(),
+                    None,
+                )
+            except asyncio.CancelledError:
+                raise
+            except Exception:
+                log.exception("proximity failed")
+                sentry_sdk.capture_exception()
+                continue
+            process_end = proto.now_ms()
+            latency_book.note_process(item.recv_ms, process_start, process_end)
+            self.last_process_ctx = {
+                "recv_ms": item.recv_ms,
+                "process_start_ms": process_start,
+                "process_end_ms": process_end,
+                "capture_ts": item.capture_ts,
+            }
+            if decision is None or not decision.should_warn:
+                continue
+            log.info(
+                "proximity warn predicted=%.2fm distance=%.2fm closing=%.2f lead=%.0fms",
+                decision.predicted_m,
+                decision.distance_m,
+                decision.closing_mps,
+                decision.lead_ms,
+            )
+            await self.say(decision.text, urgent=True, capture_ts=item.capture_ts, hazard=True)
+
     def ensure_worker(self) -> None:
         if self.worker_task is None or self.worker_task.done():
             self.worker_task = asyncio.create_task(self.worker_loop(), name="saw-ai-worker")
+        if self.prox_task is None or self.prox_task.done():
+            self.prox_task = asyncio.create_task(self.prox_loop(), name="saw-prox-worker")
+
+    def reset_for_tests(self) -> None:
+        self.latest_frame = None
+        self.latest_prox = None
+        self.frames_in_window.clear()
+        self.last_recv_mono = 0.0
+        self.last_process_ctx = None
+        self.phone = None
+        self.viewers.clear()
+        prox_engine.reset()
+        latency_book.reset()
 
 
 # Process-wide hub used by HTTP handlers and the hook helpers.
 hub = Hub()
 
 
-async def say(text: str, urgent: bool = False) -> None:
+async def say(text: str, urgent: bool = False, capture_ts: int | None = None) -> None:
     """Speak ``text`` on the phone via TTS. Urgent interrupts current speech."""
-    await hub.say(text, urgent=urgent)
+    await hub.say(text, urgent=urgent, capture_ts=capture_ts)
 
 
 async def play(audio_bytes: bytes, mime: str = "audio/wav", urgent: bool = False) -> None:

@@ -57,6 +57,10 @@ class MsgType:
     STATS = "stats"
     MIC = "mic"
     ERROR = "error"
+    TTS_START = "tts_start"
+    SYNC = "sync"
+    FLASH = "flash"
+    LATENCY = "latency"
 
 
 @dataclass(frozen=True)

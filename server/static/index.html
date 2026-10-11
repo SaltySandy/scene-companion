@@ -41,9 +41,16 @@
     button.ghost { background: transparent; color: var(--ink); border: 1px solid #2a3340; }
     label.chk { color: var(--muted); font-size: 0.9rem; display: flex; gap: 6px; align-items: center; }
     .log { font: 12px/1.4 ui-monospace, monospace; color: var(--muted); max-height: 160px; overflow: auto; white-space: pre-wrap; }
+    .flash-veil {
+      position: fixed; inset: 0; background: #fff; z-index: 50;
+      display: none; pointer-events: none;
+    }
+    .flash-veil.on { display: block; }
+    .warn { color: var(--bad); }
   </style>
 </head>
 <body>
+  <div class="flash-veil" id="flashVeil" aria-hidden="true"></div>
   <header>
     <h1><span>SAW</span> live feed</h1>
     <div class="meta"><span class="dot" id="dot"></span><span id="conn">connecting…</span></div>
@@ -58,9 +65,29 @@
         <h2>Stream</h2>
         <div class="stat"><span>Phone</span><b id="phone">—</b></div>
         <div class="stat"><span>FPS</span><b id="fps">—</b></div>
-        <div class="stat"><span>Latency (stamp)</span><b id="lat">—</b></div>
+        <div class="stat"><span>Uplink (synced)</span><b id="lat">—</b></div>
         <div class="stat"><span>Inter-frame</span><b id="inter">—</b></div>
         <div class="stat"><span>JPEG size</span><b id="bytes">—</b></div>
+      </div>
+      <div class="card">
+        <h2>Latency (one clock)</h2>
+        <div class="stat"><span>E2E p50 / p95</span><b id="e2e">—</b></div>
+        <div class="stat"><span>Remaining p95</span><b id="remain">—</b></div>
+        <div class="stat"><span>Uplink p50</span><b id="uplink">—</b></div>
+        <div class="stat"><span>Queue + process</span><b id="proc">—</b></div>
+        <div class="stat"><span>Downlink + TTS</span><b id="down">—</b></div>
+        <div class="stat"><span>Clock offset / RTT</span><b id="clock">—</b></div>
+        <div class="row">
+          <button type="button" id="flashBtn">Flash test</button>
+          <span class="meta" id="flashResult">off — point the phone at this screen</span>
+        </div>
+      </div>
+      <div class="card">
+        <h2>Proximity</h2>
+        <div class="stat"><span>Distance</span><b id="proxD">—</b></div>
+        <div class="stat"><span>Predicted at TTS</span><b id="proxP">—</b></div>
+        <div class="stat"><span>Closing speed</span><b id="proxV">—</b></div>
+        <div class="stat"><span>Estimator CPU</span><b id="proxMs">—</b></div>
       </div>
       <div class="card">
         <h2>Speak to the phone</h2>
@@ -136,6 +163,18 @@
         $("inter").textContent = obj.inter_ms + " ms";
         $("bytes").textContent = obj.bytes + " B";
         $("phone").textContent = obj.phone_connected ? "connected" : "offline";
+        if (obj.e2e_p50_ms != null || obj.e2e_p95_ms != null) {
+          $("e2e").textContent = (obj.e2e_p50_ms ?? "—") + " / " + (obj.e2e_p95_ms ?? "—") + " ms";
+        }
+        if (obj.remaining_p95_ms != null) $("remain").textContent = obj.remaining_p95_ms + " ms";
+        if (obj.clock_offset_ms != null) {
+          $("clock").textContent = obj.clock_offset_ms + " / " + (obj.clock_rtt_ms ?? "—") + " ms";
+        }
+        $("proxD").textContent = obj.proximity_m == null ? "—" : obj.proximity_m.toFixed(2) + " m";
+        $("proxP").textContent = obj.predicted_m == null ? "—" : obj.predicted_m.toFixed(2) + " m";
+        $("proxV").textContent = obj.closing_mps == null ? "—" : obj.closing_mps.toFixed(2) + " m/s";
+        if (obj.prox_ms != null) $("proxMs").textContent = obj.prox_ms + " ms";
+        $("proxP").classList.toggle("warn", obj.predicted_m != null && obj.predicted_m <= 0.3);
       } else if (obj.type === "say") {
         log("say" + (obj.urgent ? " (urgent)" : "") + ": " + obj.text);
       } else if (obj.type === "hello_ack") {
@@ -143,6 +182,15 @@
         log("hello_ack proto=" + obj.proto);
       } else if (obj.type === "mic") {
         log("mic chunk " + obj.bytes + " B");
+      } else if (obj.type === "flash") {
+        if (obj.detected) {
+          $("flashResult").textContent = "scene→processed " + obj.scene_to_processed_ms + " ms";
+          log("flash detected " + obj.scene_to_processed_ms + " ms");
+        } else if (obj.armed) {
+          $("flashResult").textContent = "armed @ " + obj.flash_ts;
+        }
+      } else if (obj.type === "latency") {
+        applyLatency(obj);
       }
     });
 
@@ -159,6 +207,63 @@
     }
     $("sayBtn").onclick = () => sendSay(false);
     $("sayUrgent").onclick = () => sendSay(true);
+    function applyLatency(j) {
+      if (!j) return;
+      const e = j.e2e_ms || {};
+      $("e2e").textContent = (e.p50 ?? "—") + " / " + (e.p95 ?? "—") + " ms";
+      if (j.remaining_p95_ms != null) $("remain").textContent = j.remaining_p95_ms + " ms";
+      const s = j.stages_ms || {};
+      $("uplink").textContent = (s.uplink && s.uplink.p50 != null) ? s.uplink.p50 + " ms" : "—";
+      const q = s.queue && s.queue.p50;
+      const p = s.process && s.process.p50;
+      $("proc").textContent = (q != null || p != null) ? ((q ?? 0) + (p ?? 0)).toFixed(1) + " ms" : "—";
+      const d = s.downlink && s.downlink.p50;
+      const t = s.tts && s.tts.p50;
+      $("down").textContent = (d != null || t != null) ? ((d ?? 0) + (t ?? 0)).toFixed(1) + " ms" : "—";
+      const c = j.clock || {};
+      if (c.offset_ms != null) $("clock").textContent = c.offset_ms + " / " + (c.rtt_ms ?? "—") + " ms";
+      const px = j.proximity;
+      if (px) {
+        $("proxD").textContent = px.last_distance_m == null ? "—" : px.last_distance_m.toFixed(2) + " m";
+        $("proxP").textContent = px.last_predicted_m == null ? "—" : px.last_predicted_m.toFixed(2) + " m";
+        $("proxV").textContent = px.last_closing_mps == null ? "—" : px.last_closing_mps.toFixed(2) + " m/s";
+        if (px.last_process_ms != null) $("proxMs").textContent = px.last_process_ms + " ms";
+      }
+      if (j.flash && j.flash.last) {
+        $("flashResult").textContent = "scene→processed " + j.flash.last.scene_to_processed_ms + " ms";
+      }
+    }
+
+    async function refreshLatency() {
+      try {
+        const r = await fetch("/latency");
+        applyLatency(await r.json());
+      } catch { /* viewer still works if the poll fails */ }
+    }
+    setInterval(refreshLatency, 1500);
+    refreshLatency();
+
+    $("flashBtn").onclick = async () => {
+      const t = Date.now();
+      $("flashVeil").classList.add("on");
+      setTimeout(() => $("flashVeil").classList.remove("on"), 280);
+      $("flashResult").textContent = "flashing…";
+      try {
+        if (ws.readyState === 1) {
+          ws.send(JSON.stringify({ v: 1, type: "flash", t }));
+        } else {
+          await fetch("/flash", {
+            method: "POST",
+            headers: { "content-type": "application/json" },
+            body: JSON.stringify({ t }),
+          });
+        }
+        log("flash armed t=" + t);
+      } catch (e) {
+        log("flash failed");
+      }
+    };
+
     $("recallBtn").onclick = async () => {
       const question = $("recallText").value;
       const backend = $("recallBackend").value;

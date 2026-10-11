@@ -19,7 +19,10 @@ import java.util.UUID
  * Lowest-latency speech path is Android TTS (offline). Audio clips use MediaPlayer / AudioTrack.
  * Urgent items flush the queue and interrupt whatever is playing.
  */
-class SpeechQueue(context: Context) {
+class SpeechQueue(
+    context: Context,
+    private val onTtsStart: ((captureTs: Long?, ttsStartTs: Long, sayRecvTs: Long?) -> Unit)? = null,
+) {
     private val app = context.applicationContext
     private val main = Handler(Looper.getMainLooper())
     private val queue = ArrayDeque<Item>()
@@ -28,9 +31,12 @@ class SpeechQueue(context: Context) {
     private var mediaPlayer: MediaPlayer? = null
     private var audioTrack: AudioTrack? = null
     private var busy = false
+    private val pending = HashMap<String, Pending>()
+
+    private data class Pending(val captureTs: Long?, val sayRecvTs: Long?)
 
     private sealed class Item {
-        data class Speak(val text: String) : Item()
+        data class Speak(val text: String, val captureTs: Long?, val sayRecvTs: Long?) : Item()
         data class Clip(val bytes: ByteArray, val flags: Int) : Item()
     }
 
@@ -42,7 +48,11 @@ class SpeechQueue(context: Context) {
                 tts?.language = Locale.getDefault()
                 tts?.setSpeechRate(1.05f)
                 tts?.setOnUtteranceProgressListener(object : UtteranceProgressListener() {
-                    override fun onStart(utteranceId: String?) = Unit
+                    override fun onStart(utteranceId: String?) {
+                        val wall = System.currentTimeMillis()
+                        val meta = synchronized(pending) { pending.remove(utteranceId) }
+                        onTtsStart?.invoke(meta?.captureTs, wall, meta?.sayRecvTs)
+                    }
                     override fun onDone(utteranceId: String?) {
                         main.post { onItemFinished() }
                     }
@@ -69,15 +79,21 @@ class SpeechQueue(context: Context) {
         }
     }
 
-    fun enqueueSay(text: String, urgent: Boolean) {
+    fun enqueueSay(
+        text: String,
+        urgent: Boolean,
+        captureTs: Long? = null,
+        sayRecvTs: Long? = null,
+    ) {
         val clean = text.trim()
         if (clean.isEmpty()) return
         main.post {
             if (urgent) {
                 queue.clear()
+                synchronized(pending) { pending.clear() }
                 stopCurrent()
             }
-            queue.addLast(Item.Speak(clean))
+            queue.addLast(Item.Speak(clean, captureTs, sayRecvTs))
             pump()
         }
     }
@@ -99,23 +115,25 @@ class SpeechQueue(context: Context) {
         val item = queue.pollFirst() ?: return
         busy = true
         when (item) {
-            is Item.Speak -> speak(item.text)
+            is Item.Speak -> speak(item.text, item.captureTs, item.sayRecvTs)
             is Item.Clip -> playClip(item)
         }
     }
 
-    private fun speak(text: String) {
+    private fun speak(text: String, captureTs: Long?, sayRecvTs: Long?) {
         val engine = tts
         if (engine == null || !ttsReady) {
             // TTS still loading — put it back and retry shortly.
-            queue.addFirst(Item.Speak(text))
+            queue.addFirst(Item.Speak(text, captureTs, sayRecvTs))
             busy = false
             main.postDelayed({ pump() }, 150)
             return
         }
         val id = UUID.randomUUID().toString()
+        synchronized(pending) { pending[id] = Pending(captureTs, sayRecvTs) }
         val rc = engine.speak(text, TextToSpeech.QUEUE_FLUSH, null, id)
         if (rc != TextToSpeech.SUCCESS) {
+            synchronized(pending) { pending.remove(id) }
             onItemFinished()
         }
     }
@@ -186,6 +204,7 @@ class SpeechQueue(context: Context) {
     }
 
     private fun stopCurrent() {
+        synchronized(pending) { pending.clear() }
         try {
             tts?.stop()
         } catch (_: Exception) {
