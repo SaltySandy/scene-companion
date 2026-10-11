@@ -3,7 +3,7 @@
 Hackathon skeleton for an AI-assisted situational-awareness tool. The **phone is the eyes and ears**. The **AI runs on a laptop**. This repo is the plumbing: Android camera/mic uplink, laptop live viewer, and a single hook where the model goes.
 
 - **Android app** (`android/`): CameraX rear-camera JPEG stream over WebSocket, TTS + clip playback, optional mic, TalkBack-first UI.
-- **Phone web app** (`server/static/phone/`): same live path in Safari / Chrome, no APK. Open `/phone` on the laptop server.
+- **Phone web app** (`server/static/phone/`): same live path in Safari / Chrome, no APK. Open `/phone` on the laptop server. **iPhone setup:** [docs/IPHONE.md](docs/IPHONE.md).
 - **Laptop server** (`server/`): FastAPI WebSocket + a local web page showing the live feed. Put vision logic in `server/ai_hook.py`.
 
 Protocol version: **v1**.
@@ -34,7 +34,7 @@ Speech-to-text is local faster-whisper on CPU (`int8`, no GPU). The model name i
 
 Open the viewer: [http://127.0.0.1:8765/](http://127.0.0.1:8765/)
 
-Desktop browser test of the phone client (no HTTPS needed): [http://127.0.0.1:8765/phone](http://127.0.0.1:8765/phone)
+Desktop browser test of the phone client (no HTTPS needed): [http://127.0.0.1:8765/phone](http://127.0.0.1:8765/phone). iPhone Safari needs HTTPS — follow **[Use on iPhone](docs/IPHONE.md)**.
 
 ### 2. Install the APK
 
@@ -74,80 +74,13 @@ Or type in the viewer text box. A scripted fake phone is in `server/tests/fake_c
 
 ## Use on iPhone
 
-No APK. The laptop serves a VoiceOver-first page at **`/phone`**. iPhone Safari will only give camera and microphone in a **secure context** (HTTPS, or `http://localhost` on the same device). Hackathon Wi-Fi `http://LAN_IP:8765` will fail getUserMedia.
+**Full setup: [docs/IPHONE.md](docs/IPHONE.md).** Short version:
 
-The Windows laptop is already on Tailscale. That is the primary path.
+1. On the laptop: `.\run_server.ps1` (or `$env:SAW_PORT = "8767"; .\run_server.ps1`).
+2. HTTPS in front, same port: `.\serve_phone.ps1` or `.\serve_phone.ps1 -Port 8767`. That runs `tailscale serve --bg --https=443 http://127.0.0.1:<port>` (tailnet-only). Fallback: `.\serve_phone.ps1 -Mode cloudflare`.
+3. iPhone: Tailscale app, same tailnet, Safari → `https://<laptop-magicdns>/phone`, tap **Start**, allow camera.
 
-### 1. Start the laptop server
-
-```powershell
-.\run_server.ps1
-```
-
-Leave it running on port **8765**. Confirm [http://127.0.0.1:8765/health](http://127.0.0.1:8765/health) returns `"ok": true`.
-
-### 2. Put HTTPS in front (Tailscale)
-
-In a second PowerShell window:
-
-```powershell
-.\serve_phone.ps1
-```
-
-Default mode is **`tailscale serve`** (only your tailnet). For a public demo URL:
-
-```powershell
-.\serve_phone.ps1 -Mode funnel
-```
-
-The script prints the HTTPS origin. Open this on the iPhone (Safari):
-
-```
-https://<machine>.<tailnet>.ts.net/phone
-```
-
-The WebSocket URL is derived from the page (`wss://…/v1/stream`). Leave the override field blank unless you are pointing at another host.
-
-**iPhone must be on the same Tailscale tailnet** for `serve` (install Tailscale, sign in to the same account / invite). `funnel` is reachable from the public internet — use only for the stage demo.
-
-Manual equivalent if you skip the helper:
-
-```powershell
-tailscale serve --bg 8765
-tailscale serve status
-# public:
-# tailscale funnel --bg 8765
-```
-
-### 3. On the iPhone
-
-1. Open `https://<your-tailscale-hostname>/phone`.
-2. Double-tap the huge **Start** button (this one tap unlocks Web Audio + speech, then asks for the camera).
-3. Allow the rear camera. **Listen** (under Start) is the mic/STT toggle; it stays off until you tap it.
-4. VoiceOver should hear **connected**. The laptop viewer at `/` should show frames. The demo stub speaks *“frame received, N per second”* about every five seconds.
-
-### Fallback: Cloudflare quick tunnel
-
-If Tailscale serve/funnel is blocked:
-
-```powershell
-.\serve_phone.ps1 -Mode cloudflare
-```
-
-That runs `cloudflared tunnel --url http://127.0.0.1:8765` and prints a `https://*.trycloudflare.com` URL. Open `/phone` on that host. Install [cloudflared](https://developers.cloudflare.com/cloudflare-one/connections/connect-networks/downloads/) first (`winget install Cloudflare.cloudflared`).
-
-### Desktop testing without HTTPS
-
-Chrome or Edge on the laptop: [http://127.0.0.1:8765/phone](http://127.0.0.1:8765/phone). `localhost` is a secure context, so the camera works.
-
-### iOS limits you cannot fully work around
-
-- **No camera/mic on plain `http://` LAN IP.** Must be HTTPS (or localhost).
-- **Audio needs that first Start tap.** Safari will not autoplay TTS or clips.
-- **`navigator.vibrate` does not exist.** Proximity haptics fall back to the same tones as Android.
-- **Backgrounding pauses the camera.** The page reconnects and restarts the camera when you come back; it is not an Android foreground service.
-- **Wake Lock** works on iOS 16.4+; older Safari may still dim.
-- **Screen lock / other apps** will stop the stream until Safari is foreground again.
+iOS Safari only grants camera, mic, and motion in a secure context. Plain `http://LAN_IP` will not get a camera. One phone per server. Turn Serve off with `tailscale serve --https=443 off`.
 
 ---
 

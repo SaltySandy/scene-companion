@@ -1,22 +1,39 @@
 # HTTPS front door for the /phone web client (Windows + Tailscale).
-# The laptop server must already be listening on http://127.0.0.1:8765
-# (run .\run_server.ps1 in another window).
+# The laptop server must already be listening on http://127.0.0.1:<port>
+# (run .\run_server.ps1 in another window; same port).
 #
-#   .\serve_phone.ps1                 # tailnet-only: tailscale serve
-#   .\serve_phone.ps1 -Mode funnel    # public HTTPS: tailscale funnel
+# Port: -Port, then $env:SAW_PORT, then 8765.
+#
+#   .\serve_phone.ps1                      # tailnet-only Tailscale Serve on 8765
+#   .\serve_phone.ps1 -Port 8767           # same, other port (verified on stage)
+#   $env:SAW_PORT = "8767"; .\serve_phone.ps1
 #   .\serve_phone.ps1 -Mode cloudflare
-#   .\serve_phone.ps1 -Mode print     # show URLs, do not change serve config
+#   .\serve_phone.ps1 -Mode print
 #
-# iPhone: install Tailscale, join the same tailnet (serve) or use the funnel /
-# trycloudflare URL, then open https://<host>/phone and tap Start.
+# Serve (verified):
+#   tailscale serve --bg --https=443 http://127.0.0.1:<port>
+# Stop:
+#   tailscale serve --https=443 off
+#
+# iPhone: Tailscale app, same tailnet, then https://<magicdns>/phone
+# Full steps: docs/IPHONE.md
 
 param(
     [ValidateSet("serve", "funnel", "cloudflare", "print")]
-    [string]$Mode = "serve"
+    [string]$Mode = "serve",
+    [int]$Port = 0
 )
 
 $ErrorActionPreference = "Stop"
-$Port = if ($env:SAW_PORT) { $env:SAW_PORT } else { "8765" }
+
+if ($Port -le 0) {
+    if ($env:SAW_PORT) {
+        $Port = [int]$env:SAW_PORT
+    } else {
+        $Port = 8765
+    }
+}
+
 $Local = "http://127.0.0.1:$Port"
 
 function Get-Health {
@@ -29,12 +46,14 @@ function Get-Health {
 
 Write-Host "Scene Companion phone HTTPS helper"
 Write-Host "Local server: $Local/phone"
+Write-Host "Port: $Port  (override with -Port or SAW_PORT)"
 Write-Host ""
 
 $health = Get-Health
 if (-not $health) {
     Write-Host "Nothing is listening on $Local."
-    Write-Host "In another PowerShell window run:  .\run_server.ps1"
+    Write-Host "In another PowerShell window, start the server on the SAME port:"
+    Write-Host "  `$env:SAW_PORT = '$Port'; .\run_server.ps1"
     Write-Host "Then re-run this script."
     if ($Mode -ne "print") {
         exit 1
@@ -66,9 +85,10 @@ if ($Mode -eq "print") {
     $hostName = Get-TailscaleHost
     if ($hostName) {
         Write-Host "Tailscale host: $hostName"
-        Write-Host "Phone URL (after serve/funnel): https://$hostName/phone"
+        Write-Host "Phone URL (after serve): https://$hostName/phone"
     }
     Write-Host "Desktop: $Local/phone"
+    Write-Host "See docs/IPHONE.md"
     exit 0
 }
 
@@ -95,17 +115,19 @@ if (-not $ts) {
 if ($Mode -eq "funnel") {
     Write-Host "Enabling Tailscale Funnel (public HTTPS) -> $Local"
     Write-Host "Anyone with the URL can reach the camera page. Stage use only."
-    & tailscale funnel --bg $Port
+    Write-Host "Prefer Serve for testers: .\serve_phone.ps1 -Port $Port"
+    & tailscale funnel --bg --https=443 $Local
 } else {
     Write-Host "Enabling Tailscale Serve (tailnet-only HTTPS) -> $Local"
-    & tailscale serve --bg $Port
+    Write-Host "Command: tailscale serve --bg --https=443 $Local"
+    & tailscale serve --bg --https=443 $Local
 }
 
 if ($LASTEXITCODE -ne 0) {
     Write-Host "tailscale $Mode failed (exit $LASTEXITCODE)."
-    Write-Host "Try the older syntax:"
-    Write-Host "  tailscale serve --https=443 $Local"
-    Write-Host "  tailscale funnel --https=443 $Local"
+    Write-Host "Verified syntax:"
+    Write-Host "  tailscale serve --bg --https=443 $Local"
+    Write-Host "  tailscale serve --https=443 off"
     exit $LASTEXITCODE
 }
 
@@ -114,13 +136,13 @@ Write-Host ""
 Write-Host ""
 $hostName = Get-TailscaleHost
 if ($hostName) {
-    Write-Host "On the iPhone (Safari):"
+    Write-Host "On the iPhone (Safari, Tailscale app signed into this tailnet):"
     Write-Host "  https://$hostName/phone"
 } else {
     Write-Host "On the iPhone open https://<your-machine>.<tailnet>.ts.net/phone"
     Write-Host "Hostname: tailscale status"
 }
 Write-Host ""
-Write-Host "Leave this config up for the demo. Reset later with:"
-Write-Host "  tailscale serve reset"
-Write-Host "  tailscale funnel reset"
+Write-Host "Leave this config up for the demo. Turn it off with:"
+Write-Host "  tailscale serve --https=443 off"
+Write-Host "See docs/IPHONE.md"
