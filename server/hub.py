@@ -17,15 +17,27 @@ from server.event_sinks import sinks
 log = logging.getLogger("saw")
 
 
+@dataclass(frozen=True)
+class PendingFrame:
+    """A frame waiting for the AI worker, with the lineage we know so far."""
+
+    jpeg: bytes
+    capture_ts: int  # phone clock, epoch ms
+    recv_ts: int  # laptop clock, epoch ms
+    dropped_before: int  # frames overwritten in the slot since the last take
+
+
 @dataclass
 class Hub:
     phone: WebSocket | None = None
     viewers: set[WebSocket] = field(default_factory=set)
-    latest_frame: tuple[bytes, int] | None = None
+    latest_frame: tuple[bytes, int, int] | None = None  # (jpeg, capture_ts, recv_ts)
     frame_event: asyncio.Event = field(default_factory=asyncio.Event)
     frames_in_window: list[float] = field(default_factory=list)
     last_recv_mono: float = 0.0
     worker_task: asyncio.Task[None] | None = None
+    frames_dropped: int = 0  # total overwritten in the latest-frame slot
+    _drops_since_take: int = 0
 
     async def attach_phone(self, ws: WebSocket) -> None:
         if self.phone is not None:
@@ -49,10 +61,30 @@ class Hub:
     def detach_viewer(self, ws: WebSocket) -> None:
         self.viewers.discard(ws)
 
-    def submit_frame(self, jpeg: bytes, ts: int) -> None:
-        """Keep only the latest JPEG. The worker never queues a backlog."""
-        self.latest_frame = (jpeg, ts)
+    def submit_frame(self, jpeg: bytes, capture_ts: int, recv_ts: int | None = None) -> None:
+        """Keep only the latest JPEG. The worker never queues a backlog.
+
+        If the previous frame is still in the slot, the worker never saw it:
+        count it as dropped before overwriting.
+        """
+        if recv_ts is None:
+            recv_ts = proto.now_ms()
+        if self.latest_frame is not None:
+            self.frames_dropped += 1
+            self._drops_since_take += 1
+        self.latest_frame = (jpeg, capture_ts, recv_ts)
         self.frame_event.set()
+
+    def take_latest(self) -> PendingFrame | None:
+        """Empty the slot and return what was in it, with its drop count."""
+        item = self.latest_frame
+        self.latest_frame = None
+        if item is None:
+            return None
+        jpeg, capture_ts, recv_ts = item
+        dropped = self._drops_since_take
+        self._drops_since_take = 0
+        return PendingFrame(jpeg, capture_ts, recv_ts, dropped)
 
     async def say(self, text: str, urgent: bool = False) -> None:
         if not text or not str(text).strip():
@@ -168,13 +200,11 @@ class Hub:
         while True:
             await self.frame_event.wait()
             self.frame_event.clear()
-            item = self.latest_frame
-            self.latest_frame = None
-            if item is None:
+            frame = self.take_latest()
+            if frame is None:
                 continue
-            jpeg, ts = item
             try:
-                result = await on_frame(jpeg, ts)
+                result = await on_frame(frame.jpeg, frame.capture_ts)
                 await self.apply_response(result)
             except asyncio.CancelledError:
                 raise

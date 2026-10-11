@@ -120,6 +120,7 @@ async def health() -> dict[str, object]:
         "proto": proto.PROTO_VERSION,
         "phone_connected": hub.phone is not None,
         "viewers": len(hub.viewers),
+        "frames_dropped": hub.frames_dropped,
         "lan_ip": lan_ip(),
     }
 
@@ -279,7 +280,7 @@ async def _handle_phone_bytes(data: bytes) -> None:
         return
     recv_ms = proto.now_ms()
     if msg.kind == proto.Kind.JPEG_FRAME:
-        hub.submit_frame(msg.payload, msg.timestamp_ms)
+        hub.submit_frame(msg.payload, msg.timestamp_ms, recv_ms)
         await hub.broadcast_frame_to_viewers(msg.payload, msg.timestamp_ms, recv_ms)
     elif msg.kind == proto.Kind.MIC_PCM:
         # Mic is accepted and ignored until the AI hook wants it.
