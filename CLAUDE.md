@@ -52,7 +52,7 @@ Owners: A = data and lineage, B = AI/ML, C = Android and demo.
 | 7 | feat(tools): `scripts/eval_proximity.py` offline eval, tune thresholds | A+B | done (needs real labeled walks) |
 | 8 | feat(protocol): `proximity` message + `POST /debug/proximity` | C | done |
 | 9 | feat(ai): depth in `on_frame` via `to_thread`, staleness gate, heartbeat | B | done |
-| 10 | feat(android): `ProximityCue.kt` tones/haptics + watchdog | C | |
+| 10 | feat(android): `ProximityCue.kt` tones/haptics + watchdog | C | done |
 | 11 | feat(lineage): phone `ack {frame_key, cue_start_ts}` | A+C | |
 | 12 | feat(ai): `server/ai/describe.py` VLM "what is it" on new obstacles | B | |
 | 13–15 | stretch: voice questions, structured sink events, demo runbook | | |

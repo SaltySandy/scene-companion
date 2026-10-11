@@ -10,6 +10,7 @@ import android.content.pm.ServiceInfo
 import android.os.Build
 import android.os.IBinder
 import android.os.PowerManager
+import android.os.SystemClock
 import android.os.VibrationEffect
 import android.os.Vibrator
 import android.os.VibratorManager
@@ -23,6 +24,8 @@ class StreamService : LifecycleService() {
     private var client: StreamClient? = null
     private var camera: CameraStreamer? = null
     private var mic: MicStreamer? = null
+    private val cuePolicy = CuePolicy()
+    private var cue: ProximityCue? = null
     private var wakeLock: PowerManager.WakeLock? = null
 
     override fun onCreate() {
@@ -30,12 +33,14 @@ class StreamService : LifecycleService() {
         prefs = Prefs(this)
         speech = SpeechQueue(this)
         speech.start()
+        cue = ProximityCue(this, cuePolicy, speech).also { it.start() }
         instance = this
         running = true
         startInForeground()
         acquireWakeLock()
         val streamClient = StreamClient(prefs, speech, object : StreamClient.Listener {
             override fun onState(state: StreamClient.ConnectionState, spoken: String) {
+                cuePolicy.onConnection(state == StreamClient.ConnectionState.CONNECTED)
                 lastSpoken = spoken
                 sendBroadcast(
                     Intent(ACTION_STATUS)
@@ -53,7 +58,7 @@ class StreamService : LifecycleService() {
             }
 
             override fun onProximity(p: Protocol.Proximity) {
-                // Cues arrive in commit 10 (ProximityCue).
+                cuePolicy.onProximity(p, SystemClock.elapsedRealtime())
             }
         })
         client = streamClient
@@ -81,6 +86,7 @@ class StreamService : LifecycleService() {
         mic?.stop()
         camera?.shutdown()
         client?.stop()
+        cue?.stop()
         speech.shutdown()
         releaseWakeLock()
         sendBroadcast(
