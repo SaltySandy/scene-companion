@@ -67,11 +67,14 @@ def summarize(records: list[dict[str, Any]]) -> dict[str, Any]:
     dropped = sum(r.get("dropped_since_last", 0) for r in records)
     span_ms = records[-1]["capture_ts"] - records[0]["capture_ts"]
 
-    # Phone -> laptop. Absolute only if every record has a clock offset.
-    synced = all(r.get("clock_offset_ms") is not None for r in records)
+    # Phone -> laptop. The offset is near-constant within a session, so the
+    # best (lowest-rtt) sample also covers frames processed before the first pong.
+    samples = [r for r in records if r.get("clock_offset_ms") is not None]
+    synced = bool(samples)
     if synced:
-        transport = [r["recv_ts"] - (r["capture_ts"] - r["clock_offset_ms"]) for r in records]
-        end_to_end = [r["infer_end"] - (r["capture_ts"] - r["clock_offset_ms"]) for r in records]
+        offset = min(samples, key=lambda r: r.get("clock_rtt_ms") or 0)["clock_offset_ms"]
+        transport = [r["recv_ts"] - (r["capture_ts"] - offset) for r in records]
+        end_to_end = [r["infer_end"] - (r["capture_ts"] - offset) for r in records]
     else:
         raw = [r["recv_ts"] - r["capture_ts"] for r in records]
         floor = min(raw)
@@ -99,6 +102,7 @@ def summarize(records: list[dict[str, Any]]) -> dict[str, Any]:
         "duration_s": span_ms / 1000,
         "processed_fps": (processed - 1) / (span_ms / 1000) if span_ms > 0 else None,
         "clock_synced": synced,
+        "clock_offset_ms": offset if synced else None,
         "latency_ms": {
             "transport": stats(transport),
             "queue": stats([r["infer_start"] - r["recv_ts"] for r in records]),

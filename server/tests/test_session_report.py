@@ -55,6 +55,17 @@ def test_synced_transport_is_absolute() -> None:
     assert s["latency_ms"]["transport"]["p50"] == 30
 
 
+def test_frames_before_the_first_pong_use_the_best_offset() -> None:
+    records = [
+        rec(10_000, recv_delay=-5000 + 30),  # processed before sync
+        rec(10_125, recv_delay=-5000 + 40, clock_offset_ms=5010, clock_rtt_ms=30),
+        rec(10_250, recv_delay=-5000 + 50, clock_offset_ms=5000, clock_rtt_ms=2),
+    ]
+    s = summarize(records)
+    assert s["clock_synced"] and s["clock_offset_ms"] == 5000
+    assert s["latency_ms"]["transport"]["max"] == 50
+
+
 def test_cli_reads_a_session_dir(tmp_path: Path, capsys) -> None:
     (tmp_path / "frames.jsonl").write_text("\n".join(json.dumps(rec(t)) for t in (0, 125, 250)) + "\n")
     assert main([str(tmp_path), "--json"]) == 0
