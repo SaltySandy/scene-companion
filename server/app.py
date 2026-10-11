@@ -305,6 +305,29 @@ async def _handle_phone_bytes(data: bytes) -> None:
         )
 
 
+@app.post("/debug/proximity")
+async def debug_proximity(request: Request) -> JSONResponse:
+    """Send one proximity message so phone cues can be tested without the model.
+
+    Body: {"level": "near"} or {"state": "unknown"}, optionally "levels"
+    {left, center, right} and "sectors_m". Real heartbeats keep flowing if the
+    model is running, so test with the depth model off (SAW_PROXIMITY=0).
+    """
+    body = await request.json() if "application/json" in request.headers.get("content-type", "") else {}
+    if not isinstance(body, dict):
+        body = {}
+    state = str(body.get("state") or request.query_params.get("state") or proto.PROXIMITY_OK)
+    level = body.get("level") or request.query_params.get("level")
+    levels = body.get("levels")
+    if state == proto.PROXIMITY_OK and levels is None and level in proto.LEVELS:
+        levels = {s: level for s in proto.SECTORS}
+    try:
+        await hub.send_proximity(state, level, levels, body.get("sectors_m"))
+    except ValueError as exc:
+        return JSONResponse({"ok": False, "error": str(exc)}, status_code=400)
+    return JSONResponse({"ok": True, "seq": hub.proximity_seq, "state": state, "level": level})
+
+
 @app.get("/debug/sentry")
 async def debug_sentry() -> JSONResponse:
     """Send one test error. Does not affect the camera stream."""

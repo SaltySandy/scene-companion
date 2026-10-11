@@ -40,6 +40,14 @@
     button { background: var(--accent); color: #1a1400; border: 0; border-radius: 8px; padding: 8px 12px; font-weight: 700; cursor: pointer; }
     button.ghost { background: transparent; color: var(--ink); border: 1px solid #2a3340; }
     label.chk { color: var(--muted); font-size: 0.9rem; display: flex; gap: 6px; align-items: center; }
+    .prox { font-size: 2rem; font-weight: 800; text-align: center; border-radius: 10px; padding: 10px 0; background: #2a3340; letter-spacing: 0.06em; }
+    .prox.clear { background: #14532d; color: #bbf7d0; }
+    .prox.near { background: #854d0e; color: #fef08a; }
+    .prox.danger { background: #991b1b; color: #fff; }
+    .prox.lost { background: #3b0764; color: #f5d0fe; }
+    .sectors { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; margin-top: 8px; text-align: center; font-variant-numeric: tabular-nums; }
+    .sectors div { background: #0b0d10; border-radius: 8px; padding: 6px 0; }
+    .sectors small { display: block; color: var(--muted); font-size: 0.72rem; }
     .log { font: 12px/1.4 ui-monospace, monospace; color: var(--muted); max-height: 160px; overflow: auto; white-space: pre-wrap; }
   </style>
 </head>
@@ -54,6 +62,16 @@
       <img id="frame" alt="Latest frame from the phone camera" hidden />
     </section>
     <aside>
+      <div class="card">
+        <h2>Proximity (what the walker hears)</h2>
+        <div class="prox lost" id="prox" role="status" aria-live="polite">NO SIGNAL</div>
+        <div class="sectors">
+          <div><small>left</small><b id="secL">—</b></div>
+          <div><small>center</small><b id="secC">—</b></div>
+          <div><small>right</small><b id="secR">—</b></div>
+        </div>
+        <div class="stat"><span>Frame age at send</span><b id="proxAge">—</b></div>
+      </div>
       <div class="card">
         <h2>Stream</h2>
         <div class="stat"><span>Phone</span><b id="phone">—</b></div>
@@ -141,10 +159,34 @@
       } else if (obj.type === "hello_ack") {
         $("phone").textContent = obj.phone_connected ? "connected" : "offline";
         log("hello_ack proto=" + obj.proto);
+      } else if (obj.type === "proximity") {
+        showProximity(obj);
       } else if (obj.type === "mic") {
         log("mic chunk " + obj.bytes + " B");
       }
     });
+
+    // Mirrors the phone watchdog: no heartbeat for 1 s means the walker hears "sensor lost".
+    let lastProx = 0;
+    function showProximity(p) {
+      lastProx = performance.now();
+      const el = $("prox");
+      const known = p.state === "ok" && ["clear", "near", "danger"].includes(p.level);
+      el.className = "prox " + (known ? p.level : "lost");
+      el.textContent = known ? p.level.toUpperCase() : "UNKNOWN";
+      const s = p.sectors_m || {};
+      const fmt = (v) => (typeof v === "number" ? v.toFixed(1) + " m" : "—");
+      $("secL").textContent = fmt(s.left);
+      $("secC").textContent = fmt(s.center);
+      $("secR").textContent = fmt(s.right);
+      $("proxAge").textContent = typeof p.age_ms === "number" ? p.age_ms + " ms" : "—";
+    }
+    setInterval(() => {
+      if (lastProx && performance.now() - lastProx > 1000) {
+        $("prox").className = "prox lost";
+        $("prox").textContent = "SENSOR LOST";
+      }
+    }, 200);
 
     async function sendSay(urgent) {
       const text = $("sayText").value;

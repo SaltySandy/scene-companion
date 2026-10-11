@@ -27,6 +27,7 @@ class StreamClient(
     interface Listener {
         fun onState(state: ConnectionState, spoken: String)
         fun onHaptic(connected: Boolean)
+        fun onProximity(p: Protocol.Proximity)
     }
 
     enum class ConnectionState { IDLE, CONNECTING, CONNECTED, RETRYING, STOPPED }
@@ -180,6 +181,7 @@ class StreamClient(
                     pendingUrgentClip = obj.optBoolean("urgent", false)
                 }
             }
+            Protocol.TYPE_PROXIMITY -> listener.onProximity(Protocol.parseProximity(obj))
             Protocol.TYPE_PING -> {
                 // Laptop clock sync: echo t0 and stamp our clock as late as possible.
                 val reply = Protocol.encodeJson(

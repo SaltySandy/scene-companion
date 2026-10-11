@@ -139,12 +139,19 @@ Laptop → phone:
 - `pong`
 - `ping` `{"t0":<laptop epoch ms>}` — clock sync; the phone answers `pong` with `t0` and its own
   clock `tp` right away. Sent 5× at connect, then every 2 s. Clients must ignore types they don't know.
+- `proximity` — heartbeat on every processed frame:
+  `{"seq":42,"state":"ok","level":"near","levels":{"left":"clear","center":"near","right":"clear"},
+  "sectors_m":{"left":3.1,"center":1.2,"right":2.8},"frame_key":<capture_ts>,"age_ms":180}`.
+  `state:"unknown"` (level null) means the laptop cannot vouch for the path; the phone treats it
+  like silence and plays the sensor-lost cue, as it does when heartbeats stop for ~1 s.
 - `status` with `msg="audio"` may precede an `AUDIO_CLIP` and can carry `urgent`
 
 HTTP helpers (same laptop):
 
 - `POST /say` JSON `{"text":"...","urgent":false}` or raw text
 - `POST /play` raw audio body, `Content-Type` = mime
+- `POST /debug/proximity` `{"level":"danger"}` or `{"state":"unknown"}` — inject one proximity
+  message to test the phone's cues without the depth model
 - `GET /health`, `GET /`
 
 ---

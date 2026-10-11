@@ -50,6 +50,7 @@ class Hub:
     recorder: Recorder = field(default_factory=Recorder.disabled)
     clock: ClockSync = field(default_factory=ClockSync)
     clock_task: asyncio.Task[None] | None = None
+    proximity_seq: int = 0
 
     async def attach_phone(self, ws: WebSocket) -> None:
         if self.phone is not None:
@@ -109,6 +110,21 @@ class Hub:
         )
         log.info("say urgent=%s: %s", urgent, text)
         sinks.log_event("say", str(text).strip(), meta={"urgent": bool(urgent)})
+
+    async def send_proximity(
+        self,
+        state: str,
+        level: str | None = None,
+        levels: dict[str, str] | None = None,
+        sectors_m: dict[str, float] | None = None,
+        frame_key: int | None = None,
+        age_ms: int | None = None,
+    ) -> None:
+        """One proximity heartbeat to the phone and every viewer."""
+        self.proximity_seq += 1
+        msg = proto.encode_proximity(self.proximity_seq, state, level, levels, sectors_m, frame_key, age_ms)
+        await self._send_phone_text(msg)
+        await self._broadcast_viewers_text(msg)
 
     async def play(self, audio_bytes: bytes, mime: str = "audio/wav", urgent: bool = False) -> None:
         if not audio_bytes:

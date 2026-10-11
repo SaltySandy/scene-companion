@@ -33,6 +33,28 @@ object Protocol {
     const val TYPE_STATS = "stats"
     const val TYPE_MIC = "mic"
     const val TYPE_ERROR = "error"
+    const val TYPE_PROXIMITY = "proximity"
+
+    const val STATE_OK = "ok"
+    const val STATE_UNKNOWN = "unknown"
+    const val LEVEL_CLEAR = "clear"
+    const val LEVEL_NEAR = "near"
+    const val LEVEL_DANGER = "danger"
+    val LEVELS = listOf(LEVEL_CLEAR, LEVEL_NEAR, LEVEL_DANGER)
+    val SECTORS = listOf("left", "center", "right")
+
+    /** A proximity heartbeat. [known] is false for state "unknown" or any level we don't understand. */
+    data class Proximity(
+        val seq: Long,
+        val state: String,
+        val level: String?,
+        val levels: Map<String, String>,
+        val sectorsM: Map<String, Double>,
+        val frameKey: Long?,
+        val ageMs: Long?,
+    ) {
+        val known: Boolean get() = state == STATE_OK && level in LEVELS
+    }
 
     data class BinaryMessage(
         val kind: Int,
@@ -97,6 +119,26 @@ object Protocol {
             throw IllegalArgumentException("JSON message missing type")
         }
         return obj
+    }
+
+    fun parseProximity(obj: JSONObject): Proximity {
+        val levelsObj = obj.optJSONObject("levels")
+        val sectorsObj = obj.optJSONObject("sectors_m")
+        val levels = mutableMapOf<String, String>()
+        val sectors = mutableMapOf<String, Double>()
+        for (s in SECTORS) {
+            if (levelsObj != null && !levelsObj.isNull(s)) levels[s] = levelsObj.optString(s)
+            if (sectorsObj != null && !sectorsObj.isNull(s)) sectors[s] = sectorsObj.optDouble(s)
+        }
+        return Proximity(
+            seq = obj.optLong("seq", 0L),
+            state = obj.optString("state", STATE_UNKNOWN),
+            level = if (obj.isNull("level")) null else obj.optString("level"),
+            levels = levels,
+            sectorsM = sectors,
+            frameKey = if (obj.isNull("frame_key")) null else obj.optLong("frame_key"),
+            ageMs = if (obj.isNull("age_ms")) null else obj.optLong("age_ms"),
+        )
     }
 
     fun mimeForFlag(flags: Int): String = when (flags) {

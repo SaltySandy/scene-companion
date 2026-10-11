@@ -51,6 +51,10 @@ class StreamService : LifecycleService() {
             override fun onHaptic(connected: Boolean) {
                 pulse(if (connected) 40 else 80)
             }
+
+            override fun onProximity(p: Protocol.Proximity) {
+                // Cues arrive in commit 10 (ProximityCue).
+            }
         })
         client = streamClient
         streamClient.start()
