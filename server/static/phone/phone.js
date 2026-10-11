@@ -30,7 +30,8 @@
     running: false,
     connected: false,
     connecting: false,
-    listenOn: false,
+    listenOn: true,
+    listenUserSet: false,
     lastSpoken: "",
     lastSay: "",
     lastAudioEvent: "",
@@ -82,7 +83,13 @@
     try {
       const saved = localStorage.getItem("saw.wsUrl");
       if (saved) wsInput.value = saved;
-      state.listenOn = localStorage.getItem("saw.listen") === "1";
+      state.listenUserSet = localStorage.getItem("saw.listenUser") === "1";
+      if (state.listenUserSet) {
+        state.listenOn = localStorage.getItem("saw.listen") === "1";
+      } else {
+        // Demo default ON until the user toggles Listen (or hello_ack says otherwise).
+        state.listenOn = true;
+      }
     } catch (_e) {
       /* private mode */
     }
@@ -94,7 +101,10 @@
   function persistSettings() {
     try {
       localStorage.setItem("saw.wsUrl", wsInput.value.trim());
-      localStorage.setItem("saw.listen", state.listenOn ? "1" : "0");
+      if (state.listenUserSet) {
+        localStorage.setItem("saw.listen", state.listenOn ? "1" : "0");
+        localStorage.setItem("saw.listenUser", "1");
+      }
     } catch (_e) {
       /* ignore */
     }
@@ -138,8 +148,8 @@
     listenBtn.setAttribute(
       "aria-label",
       state.listenOn
-        ? "Listening. Microphone streaming is on. Turn off to stop sending your voice to the laptop."
-        : "Listen. Microphone streaming, off by default. Turn on to send your voice to the laptop.",
+        ? "Listening. Microphone streaming is on by default. Turn off to stop sending your voice to the laptop. Say what's in front of me."
+        : "Listen. Microphone streaming is off. Turn on to send your voice to the laptop, then say what's in front of me.",
     );
   }
 
@@ -453,6 +463,28 @@
     }
   }
 
+  function applyServerListen(want) {
+    if (state.listenOn === want) return;
+    state.listenOn = want;
+    renderListen();
+    if (!state.running) return;
+    if (want) {
+      startMic().catch(function () {
+        state.listenOn = false;
+        renderListen();
+      });
+    } else {
+      stopMic();
+    }
+    sendJson(proto.TYPE_CONFIG, {
+      width: WIDTH,
+      height: HEIGHT,
+      fps: FPS,
+      quality: 70,
+      mic: state.listenOn,
+    });
+  }
+
   function handleText(text) {
     let obj;
     try {
@@ -518,6 +550,9 @@
     }
     if (obj.type === proto.TYPE_HELLO_ACK) {
       state.helloAck = true;
+      if (!state.listenUserSet && obj.listen_default != null) {
+        applyServerListen(!!obj.listen_default);
+      }
     }
   }
 
@@ -624,6 +659,7 @@
     if (state.listenOn) {
       try {
         await startMic();
+        announce("Listening");
       } catch (_e2) {
         state.listenOn = false;
         renderListen();
@@ -674,6 +710,7 @@
 
   listenBtn.addEventListener("click", async function () {
     const turnOn = !state.listenOn;
+    state.listenUserSet = true;
     if (turnOn) {
       try {
         await unlockAudio();

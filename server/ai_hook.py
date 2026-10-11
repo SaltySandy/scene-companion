@@ -306,9 +306,10 @@ async def on_frame(jpeg_bytes: bytes, ts: int) -> Response:
 async def on_transcript(text: str, is_final: bool, ts: int) -> None:
     """Question hook. ``text`` is a partial or final utterance. ``ts`` is capture time in ms.
 
-    The default stub proves the loop: finals are spoken back. Replace this
-    with the real assistant. Do not do slow work before the first await if
-    you can help it; the caller already runs off the camera thread.
+    Describe-scene phrases ("what's in front of me") go through the existing
+    ``assistant.ask`` path with an immediate spoken ack. Other finals still
+    go to the assistant when it is on, otherwise they are echoed. Never
+    does slow work before the first await; the camera worker does not wait.
     """
     import logging
 
@@ -317,12 +318,17 @@ async def on_transcript(text: str, is_final: bool, ts: int) -> None:
         return
     from server.event_sinks import sinks
     from server.hub import say
+    from server.scene_assistant import assistant
+    from server.voice_intent import is_describe_scene
 
     sinks.log_event("transcript", text.strip(), meta={"ts": ts, "final": True})
 
-    from server.scene_assistant import assistant
-
     question = text.strip()
+    if is_describe_scene(question):
+        # Same SceneAssistant as /ask and "What is this?". ack=True adds
+        # Looking., cooldown, timeout, and the no-key spoken fallback.
+        assistant.ask(question, ack=True)
+        return
     if assistant.enabled and len(question) >= 3:
         # Gemini looks at the current frame; Nimble adds web facts when useful.
         assistant.ask(question)

@@ -28,6 +28,7 @@ class StreamClient(
         fun onState(state: ConnectionState, spoken: String)
         fun onHaptic(connected: Boolean)
         fun onProximity(p: Protocol.Proximity)
+        fun onListenDefault(enabled: Boolean) {}
     }
 
     enum class ConnectionState { IDLE, CONNECTING, CONNECTED, RETRYING, STOPPED }
@@ -247,7 +248,12 @@ class StreamClient(
                 )
                 socketRef.get()?.send(reply)
             }
-            Protocol.TYPE_PONG, Protocol.TYPE_HELLO_ACK -> Unit
+            Protocol.TYPE_PONG -> Unit
+            Protocol.TYPE_HELLO_ACK -> {
+                if (obj.has("listen_default")) {
+                    listener.onListenDefault(obj.optBoolean("listen_default", true))
+                }
+            }
         }
     }
 

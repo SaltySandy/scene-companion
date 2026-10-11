@@ -35,6 +35,8 @@ async def test_phone_page_served() -> None:
         assert "Scene Companion" in body
         assert 'id="startStop"' in body
         assert 'id="listen"' in body
+        assert "On by default" in body
+        assert "what's in front of me" in body
         assert 'aria-live="assertive"' in body
         assert "/static/phone/phone.js" in body
         assert css.status_code == 200

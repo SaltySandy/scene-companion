@@ -66,6 +66,9 @@ class MainActivity : AppCompatActivity() {
         prefs = Prefs(this)
 
         binding.hostInput.setText(prefs.hostPort)
+        if (!prefs.micUserSet) {
+            prefs.micEnabled = Prefs.DEFAULT_MIC
+        }
         renderListen()
 
         binding.hostInput.setOnFocusChangeListener { _, hasFocus ->
@@ -116,8 +119,9 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun applyListening(enabled: Boolean) {
+        prefs.micUserSet = true
         prefs.micEnabled = enabled
-        StreamService.instance?.setListening(enabled)
+        StreamService.instance?.setListening(enabled, userInitiated = true)
         renderListen()
         announce(if (enabled) getString(R.string.listen_on) else getString(R.string.listen_off))
     }
@@ -126,7 +130,8 @@ class MainActivity : AppCompatActivity() {
         persistSettings()
         val needed = mutableListOf<String>()
         if (!hasCamera()) needed.add(Manifest.permission.CAMERA)
-        if (prefs.micEnabled && !hasMic()) needed.add(Manifest.permission.RECORD_AUDIO)
+        // Listen is on by default; always ask so Start can stream the mic.
+        if (!hasMic()) needed.add(Manifest.permission.RECORD_AUDIO)
         if (Build.VERSION.SDK_INT >= 33 &&
             ContextCompat.checkSelfPermission(this, Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED
         ) {
@@ -143,6 +148,9 @@ class MainActivity : AppCompatActivity() {
         StreamService.start(this)
         render("starting", true)
         announce("starting")
+        if (prefs.micEnabled) {
+            announce(getString(R.string.listen_on))
+        }
     }
 
     private fun render(status: String, running: Boolean) {

@@ -8,7 +8,7 @@ import android.media.audiofx.AcousticEchoCanceler
 import android.util.Log
 import java.util.concurrent.atomic.AtomicBoolean
 
-/** Optional 16 kHz mono PCM16 uplink, in 100 ms chunks. Off until Listen is on. */
+/** 16 kHz mono PCM16 uplink, in 100 ms chunks. On by default for the demo; toggle Listen to stop. */
 class MicStreamer(
     private val onPcm: (ByteArray, Long) -> Unit,
 ) {

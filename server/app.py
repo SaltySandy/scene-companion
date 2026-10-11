@@ -34,6 +34,7 @@ from server import ai_hook
 from server.hub import hub, play, say
 from server.transcribe import transcriber
 from server.scene_assistant import assistant
+from server.voice_intent import listen_default
 from server.wall_detector import detector as wall_detector
 
 log = logging.getLogger("saw")
@@ -131,6 +132,7 @@ async def lifespan(_app: FastAPI):
         print(f"  Ask    : Gemini ({os.environ.get('SAW_GEMINI_VISION_MODEL', 'gemini-3.5-flash-lite')})"
               f" + Nimble web search {'ON' if assistant.nimble_enabled else 'OFF (set NIMBLE_API_KEY)'}")
         print(f"  Voice  : speech-to-text via {transcriber.backend}")
+        print(f"  Listen : default {'ON' if listen_default() else 'OFF'} (SAW_LISTEN_DEFAULT); say what's in front of me")
     print(f"  Say    : curl -X POST http://{ip}:{port}/say -H 'content-type: application/json' -d '{{\"text\":\"hello\"}}'")
     if hub.recorder.enabled:
         print(f"  Record : {hub.recorder.path}")
@@ -182,6 +184,7 @@ async def health() -> dict[str, object]:
         "latest_jpeg_bytes": len(hub.last_jpeg) if hub.last_jpeg else 0,
         "fov": ai_hook.fov_params(),
         "assistant": {"enabled": assistant.enabled, "nimble": assistant.nimble_enabled},
+        "listen_default": listen_default(),
     }
 
 
@@ -269,7 +272,14 @@ async def http_play(request: Request) -> JSONResponse:
 async def phone_stream(ws: WebSocket) -> None:
     await ws.accept()
     await hub.attach_phone(ws)
-    await ws.send_text(proto.encode_json(proto.MsgType.HELLO_ACK, server="saw-server", proto=proto.PROTO_VERSION))
+    await ws.send_text(
+        proto.encode_json(
+            proto.MsgType.HELLO_ACK,
+            server="saw-server",
+            proto=proto.PROTO_VERSION,
+            listen_default=listen_default(),
+        )
+    )
     try:
         while True:
             message = await ws.receive()
