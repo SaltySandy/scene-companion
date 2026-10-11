@@ -1,0 +1,150 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>SAW — live feed</title>
+  <style>
+    :root {
+      --bg: #0b0d10;
+      --panel: #151920;
+      --ink: #e8edf4;
+      --muted: #93a0b3;
+      --accent: #f5c542;
+      --good: #3dd68c;
+      --bad: #ff6b6b;
+    }
+    * { box-sizing: border-box; }
+    html, body { margin: 0; height: 100%; background: var(--bg); color: var(--ink); font: 16px/1.45 ui-sans-serif, system-ui, sans-serif; }
+    header { padding: 16px 20px 8px; display: flex; justify-content: space-between; align-items: baseline; gap: 12px; flex-wrap: wrap; }
+    h1 { font-size: 1.15rem; margin: 0; letter-spacing: 0.02em; }
+    h1 span { color: var(--accent); }
+    .meta { color: var(--muted); font-size: 0.9rem; }
+    main { display: grid; grid-template-columns: 1fr 320px; gap: 16px; padding: 8px 20px 20px; height: calc(100% - 64px); }
+    @media (max-width: 800px) { main { grid-template-columns: 1fr; height: auto; } }
+    .stage { background: var(--panel); border-radius: 12px; display: flex; align-items: center; justify-content: center; overflow: hidden; min-height: 280px; position: relative; }
+    .stage img { max-width: 100%; max-height: 100%; display: block; background: #000; }
+    .empty { color: var(--muted); padding: 24px; text-align: center; }
+    aside { display: flex; flex-direction: column; gap: 12px; }
+    .card { background: var(--panel); border-radius: 12px; padding: 14px 16px; }
+    .card h2 { margin: 0 0 8px; font-size: 0.78rem; text-transform: uppercase; letter-spacing: 0.08em; color: var(--muted); }
+    .stat { display: flex; justify-content: space-between; padding: 4px 0; }
+    .stat b { font-variant-numeric: tabular-nums; }
+    .dot { width: 8px; height: 8px; border-radius: 50%; display: inline-block; margin-right: 6px; background: var(--bad); }
+    .dot.on { background: var(--good); }
+    textarea, input, button { font: inherit; }
+    textarea { width: 100%; min-height: 72px; background: #0b0d10; color: var(--ink); border: 1px solid #2a3340; border-radius: 8px; padding: 8px; resize: vertical; }
+    .row { display: flex; gap: 8px; margin-top: 8px; align-items: center; }
+    button { background: var(--accent); color: #1a1400; border: 0; border-radius: 8px; padding: 8px 12px; font-weight: 700; cursor: pointer; }
+    button.ghost { background: transparent; color: var(--ink); border: 1px solid #2a3340; }
+    label.chk { color: var(--muted); font-size: 0.9rem; display: flex; gap: 6px; align-items: center; }
+    .log { font: 12px/1.4 ui-monospace, monospace; color: var(--muted); max-height: 160px; overflow: auto; white-space: pre-wrap; }
+  </style>
+</head>
+<body>
+  <header>
+    <h1><span>SAW</span> live feed</h1>
+    <div class="meta"><span class="dot" id="dot"></span><span id="conn">connecting…</span></div>
+  </header>
+  <main>
+    <section class="stage" aria-label="Phone camera feed">
+      <div class="empty" id="empty">Waiting for frames from the phone.</div>
+      <img id="frame" alt="Latest frame from the phone camera" hidden />
+    </section>
+    <aside>
+      <div class="card">
+        <h2>Stream</h2>
+        <div class="stat"><span>Phone</span><b id="phone">—</b></div>
+        <div class="stat"><span>FPS</span><b id="fps">—</b></div>
+        <div class="stat"><span>Latency (stamp)</span><b id="lat">—</b></div>
+        <div class="stat"><span>Inter-frame</span><b id="inter">—</b></div>
+        <div class="stat"><span>JPEG size</span><b id="bytes">—</b></div>
+      </div>
+      <div class="card">
+        <h2>Speak to the phone</h2>
+        <textarea id="sayText" placeholder="Something the phone should say">stairs ahead, on your right</textarea>
+        <div class="row">
+          <button type="button" id="sayBtn">Say</button>
+          <button type="button" class="ghost" id="sayUrgent">Say urgent</button>
+          <label class="chk"><input type="checkbox" id="urgentBox" /> urgent</label>
+        </div>
+      </div>
+      <div class="card">
+        <h2>Log</h2>
+        <div class="log" id="log"></div>
+      </div>
+    </aside>
+  </main>
+  <script>
+    const proto = location.protocol === "https:" ? "wss" : "ws";
+    const ws = new WebSocket(`${proto}://${location.host}/v1/viewer`);
+    ws.binaryType = "arraybuffer";
+
+    const $ = (id) => document.getElementById(id);
+    const logEl = $("log");
+    function log(line) {
+      const t = new Date().toLocaleTimeString();
+      logEl.textContent = `[${t}] ${line}\n` + logEl.textContent;
+    }
+
+    ws.addEventListener("open", () => {
+      $("dot").classList.add("on");
+      $("conn").textContent = "viewer connected";
+      log("viewer socket open");
+    });
+    ws.addEventListener("close", () => {
+      $("dot").classList.remove("on");
+      $("conn").textContent = "viewer disconnected — reload to retry";
+      log("viewer socket closed");
+    });
+    ws.addEventListener("error", () => log("viewer socket error"));
+
+    let url = null;
+    ws.addEventListener("message", (ev) => {
+      if (ev.data instanceof ArrayBuffer) {
+        const bytes = new Uint8Array(ev.data);
+        if (bytes.byteLength < 20) return;
+        const payloadLen = new DataView(ev.data).getUint32(16);
+        const jpeg = bytes.subarray(20, 20 + payloadLen);
+        const blob = new Blob([jpeg], { type: "image/jpeg" });
+        if (url) URL.revokeObjectURL(url);
+        url = URL.createObjectURL(blob);
+        $("frame").src = url;
+        $("frame").hidden = false;
+        $("empty").hidden = true;
+        return;
+      }
+      let obj;
+      try { obj = JSON.parse(ev.data); } catch { return; }
+      if (obj.type === "stats") {
+        $("fps").textContent = obj.fps;
+        $("lat").textContent = obj.latency_ms + " ms";
+        $("inter").textContent = obj.inter_ms + " ms";
+        $("bytes").textContent = obj.bytes + " B";
+        $("phone").textContent = obj.phone_connected ? "connected" : "offline";
+      } else if (obj.type === "say") {
+        log("say" + (obj.urgent ? " (urgent)" : "") + ": " + obj.text);
+      } else if (obj.type === "hello_ack") {
+        $("phone").textContent = obj.phone_connected ? "connected" : "offline";
+        log("hello_ack proto=" + obj.proto);
+      } else if (obj.type === "mic") {
+        log("mic chunk " + obj.bytes + " B");
+      }
+    });
+
+    async function sendSay(urgent) {
+      const text = $("sayText").value;
+      const u = urgent || $("urgentBox").checked;
+      const r = await fetch("/say", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ text, urgent: u }),
+      });
+      const j = await r.json();
+      log(j.ok ? "posted say" : ("say failed: " + j.error));
+    }
+    $("sayBtn").onclick = () => sendSay(false);
+    $("sayUrgent").onclick = () => sendSay(true);
+  </script>
+</body>
+</html>

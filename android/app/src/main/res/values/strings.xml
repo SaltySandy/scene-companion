@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">Scene Companion</string>
+    <string name="start_streaming">Start</string>
+    <string name="stop_streaming">Stop</string>
+    <string name="start_streaming_cd">Start streaming the camera to the laptop</string>
+    <string name="stop_streaming_cd">Stop streaming and disconnect</string>
+    <string name="status_stopped">Stopped</string>
+    <string name="status_cd">Connection status</string>
+    <string name="server_label">Laptop address</string>
+    <string name="server_hint">127.0.0.1:8765</string>
+    <string name="server_cd">Laptop host and port, for example 192.168.1.20 colon 8765. Use 127.0.0.1 colon 8765 with USB adb reverse.</string>
+    <string name="mic_label">Send microphone to laptop</string>
+    <string name="mic_cd">Microphone streaming, off by default. Turn on to send your voice to the laptop.</string>
+    <string name="hint_usb">USB is most reliable: adb reverse tcp:8765 tcp:8765, then use 127.0.0.1:8765.</string>
+    <string name="camera_required">Camera permission is required.</string>
+    <string name="notif_channel">Camera stream</string>
+    <string name="notif_channel_desc">Keeps the camera and laptop connection running when the screen locks.</string>
+    <string name="notif_title">Scene Companion is streaming</string>
+    <string name="notif_text">Camera is sending frames to the laptop.</string>
+    <string name="stop">Stop</string>
+</resources>
