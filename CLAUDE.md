@@ -49,7 +49,7 @@ Owners: A = data and lineage, B = AI/ML, C = Android and demo.
 | 4 | fix(android): fixed mount rotation; skip encoding while disconnected | C | done |
 | 5 | feat(tools): `scripts/prelabel.py` VLM pre-labeling | B | done |
 | 6 | feat(ai): `server/ai/depth.py` + `server/ai/proximity.py` (sectors, levels) | B | done |
-| 7 | feat(tools): `scripts/eval_proximity.py` offline eval, tune thresholds | A+B | |
+| 7 | feat(tools): `scripts/eval_proximity.py` offline eval, tune thresholds | A+B | done (needs real labeled walks) |
 | 8 | feat(protocol): `proximity` message + `POST /debug/proximity` | C | |
 | 9 | feat(ai): depth in `on_frame` via `to_thread`, staleness gate, heartbeat | B | |
 | 10 | feat(android): `ProximityCue.kt` tones/haptics + watchdog | C | |
