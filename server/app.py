@@ -12,6 +12,14 @@ from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Any
 
+# Load GEMINI_API_KEY etc. from a .env file in the repo root, if present.
+try:
+    from dotenv import load_dotenv
+
+    load_dotenv(Path(__file__).resolve().parent.parent / ".env")
+except ImportError:
+    pass
+
 import sentry_sdk
 from fastapi import FastAPI, Request, WebSocket, WebSocketDisconnect
 from fastapi.responses import HTMLResponse, JSONResponse, PlainTextResponse, Response
