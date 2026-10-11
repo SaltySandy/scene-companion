@@ -1,0 +1,195 @@
+{
+  "note": "AI-generated synthetic test scenes (not real photos). Same room throughout: 4 black stackable chairs, folding table, gray door with red EXIT sign. 640x480 versions match the phone stream (JPEG q70).",
+  "fields": {
+    "exit_visible": ["yes", "partial", "no"],
+    "exit_bearing": ["left", "center", "right", "behind", "none"],
+    "exit_distance": ["close", "near", "mid", "far", "none"],
+    "nearest_obstacle_distance": ["close", "near", "mid", "far", "none"],
+    "obstacle_ahead": "bool",
+    "should_stop": "bool",
+    "arrived": "bool",
+    "utterance": "plain-words reference the phone should speak"
+  },
+  "distance_buckets": {
+    "close": "< 1.0 m",
+    "near": "1.0 to 2.5 m",
+    "mid": "2.5 to 5.0 m",
+    "far": "> 5.0 m",
+    "none": "not applicable"
+  },
+  "sequence_default": [
+    "01_entry_overview",
+    "02_chair_blocking",
+    "04_arrived_at_exit"
+  ],
+  "scenes": [
+    {
+      "id": "01_entry_overview",
+      "file": "01_entry_overview.jpg",
+      "exit_visible": "yes",
+      "exit_bearing": "right",
+      "exit_distance": "far",
+      "exit_distance_m": 7.0,
+      "obstacle_ahead": true,
+      "nearest_obstacle_distance": "near",
+      "nearest_obstacle_m": 2.0,
+      "nearest_obstacle_label": "chair",
+      "should_stop": false,
+      "arrived": false,
+      "utterance": "Exit ahead slightly right. Chair ahead on your right, keep left of it.",
+      "source": {
+        "exit_visible": true,
+        "exit_bearing": "right of center, far (~7 m)",
+        "nearest_obstacle": "chair ~2 m ahead-right",
+        "expected_guidance": "Exit ahead slightly right; chair ahead on your right, keep left of it."
+      }
+    },
+    {
+      "id": "02_chair_blocking",
+      "file": "02_chair_blocking.jpg",
+      "exit_visible": "yes",
+      "exit_bearing": "right",
+      "exit_distance": "mid",
+      "exit_distance_m": 4.0,
+      "obstacle_ahead": true,
+      "nearest_obstacle_distance": "close",
+      "nearest_obstacle_m": 0.8,
+      "nearest_obstacle_label": "chair",
+      "should_stop": true,
+      "arrived": false,
+      "utterance": "Stop. Chair directly ahead. Step right, then continue forward to the exit.",
+      "source": {
+        "exit_visible": true,
+        "exit_bearing": "slightly right, ~4 m",
+        "nearest_obstacle": "chair directly ahead <1 m",
+        "expected_guidance": "Stop. Chair directly ahead. Step right, then continue forward to the exit."
+      }
+    },
+    {
+      "id": "03_exit_at_right_edge",
+      "file": "03_exit_at_right_edge.jpg",
+      "exit_visible": "partial",
+      "exit_bearing": "right",
+      "exit_distance": "far",
+      "exit_distance_m": 6.0,
+      "obstacle_ahead": false,
+      "nearest_obstacle_distance": "none",
+      "nearest_obstacle_m": null,
+      "nearest_obstacle_label": null,
+      "should_stop": false,
+      "arrived": false,
+      "utterance": "Exit is to your right. Turn right.",
+      "source": {
+        "exit_visible": "partial, right edge",
+        "exit_bearing": "far right",
+        "nearest_obstacle": "none close",
+        "expected_guidance": "Exit is to your right. Turn right."
+      }
+    },
+    {
+      "id": "04_arrived_at_exit",
+      "file": "04_arrived_at_exit.jpg",
+      "exit_visible": "yes",
+      "exit_bearing": "center",
+      "exit_distance": "close",
+      "exit_distance_m": 1.5,
+      "obstacle_ahead": true,
+      "nearest_obstacle_distance": "near",
+      "nearest_obstacle_m": 1.5,
+      "nearest_obstacle_label": "door",
+      "should_stop": true,
+      "arrived": true,
+      "utterance": "You have reached the exit door. Handle on the right.",
+      "source": {
+        "exit_visible": true,
+        "exit_bearing": "straight ahead, ~1.5 m",
+        "nearest_obstacle": "door ahead",
+        "expected_guidance": "You've reached the exit door, handle on the right."
+      }
+    },
+    {
+      "id": "05_low_light",
+      "file": "05_low_light.jpg",
+      "exit_visible": "yes",
+      "exit_bearing": "right",
+      "exit_distance": "far",
+      "exit_distance_m": 7.0,
+      "obstacle_ahead": true,
+      "nearest_obstacle_distance": "near",
+      "nearest_obstacle_m": 2.0,
+      "nearest_obstacle_label": "chair",
+      "should_stop": false,
+      "arrived": false,
+      "utterance": "Exit ahead slightly right. Chair ahead on your right, keep left of it.",
+      "source": {
+        "exit_visible": true,
+        "exit_bearing": "right of center, far",
+        "nearest_obstacle": "chair ~2 m ahead-right (low contrast)",
+        "expected_guidance": "Same as 01, but chairs are hard to see: should not miss them or invent false obstacles."
+      }
+    },
+    {
+      "id": "06_plain_wall_close",
+      "file": "06_plain_wall_close.jpg",
+      "exit_visible": "no",
+      "exit_bearing": "none",
+      "exit_distance": "none",
+      "exit_distance_m": null,
+      "obstacle_ahead": true,
+      "nearest_obstacle_distance": "close",
+      "nearest_obstacle_m": 0.6,
+      "nearest_obstacle_label": "wall",
+      "should_stop": true,
+      "arrived": false,
+      "utterance": "Stop. Wall directly ahead.",
+      "source": {
+        "exit_visible": false,
+        "exit_bearing": null,
+        "nearest_obstacle": "featureless wall ~0.6 m",
+        "expected_guidance": "Stop, wall directly ahead. (Plain-wall case.)"
+      }
+    },
+    {
+      "id": "07_motion_blur_partial_chair",
+      "file": "07_motion_blur_partial_chair.jpg",
+      "exit_visible": "partial",
+      "exit_bearing": "center",
+      "exit_distance": "mid",
+      "exit_distance_m": 5.0,
+      "obstacle_ahead": true,
+      "nearest_obstacle_distance": "near",
+      "nearest_obstacle_m": 1.0,
+      "nearest_obstacle_label": "chair",
+      "should_stop": false,
+      "arrived": false,
+      "utterance": "Chair close on your right. Exit ahead.",
+      "source": {
+        "exit_visible": "blurry",
+        "exit_bearing": "ahead, ~5 m",
+        "nearest_obstacle": "chair at right edge ~1 m",
+        "expected_guidance": "Chair close on your right; exit ahead."
+      }
+    },
+    {
+      "id": "08_exit_not_visible",
+      "file": "08_exit_not_visible.jpg",
+      "exit_visible": "no",
+      "exit_bearing": "behind",
+      "exit_distance": "none",
+      "exit_distance_m": null,
+      "obstacle_ahead": true,
+      "nearest_obstacle_distance": "near",
+      "nearest_obstacle_m": 1.5,
+      "nearest_obstacle_label": "chair",
+      "should_stop": false,
+      "arrived": false,
+      "utterance": "Chair ahead on your left. Exit is not in view. Turn and scan for the exit sign.",
+      "source": {
+        "exit_visible": false,
+        "exit_bearing": "behind the user",
+        "nearest_obstacle": "chair ~1.5 m ahead-left",
+        "expected_guidance": "Exit not in view. Should NOT pick the open doorway as the exit; ask the user to turn / scan."
+      }
+    }
+  ]
+}

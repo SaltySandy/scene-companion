@@ -11,7 +11,8 @@ If the depth model or its dependencies are missing, every reading is
 quiet. Set SAW_PROXIMITY=0 to turn the sensor off (for /debug/proximity tests).
 
 You may also return ``Say`` / ``Play`` items (or a list mixing them with the
-reading) to talk to the phone.
+reading) to talk to the phone. Navigation speech is appended only when
+``SAW_NAV=1``.
 """
 
 from __future__ import annotations
@@ -241,10 +242,22 @@ async def _describe_and_say(jpeg_bytes: bytes, sector: str, started: float) -> N
 # Demo announcement (off by default; tests turn it on)
 # ---------------------------------------------------------------------------
 
+# Import-time default matches main (off). Replay / tests can override
+# SAW_DEMO_ANNOUNCE_SEC after import; _announce_every_sec reads it at call time.
 ANNOUNCE_EVERY_SEC = float(os.environ.get("SAW_DEMO_ANNOUNCE_SEC", "0"))
 
 _frame_times: deque[float] = deque()
 _last_announce = 0.0
+
+
+def _announce_every_sec() -> float:
+    raw = os.environ.get("SAW_DEMO_ANNOUNCE_SEC")
+    if raw is None:
+        return ANNOUNCE_EVERY_SEC
+    try:
+        return float(raw)
+    except ValueError:
+        return 0.0
 
 
 def _demo_announce() -> Say | None:
@@ -253,10 +266,26 @@ def _demo_announce() -> Say | None:
     _frame_times.append(now)
     while _frame_times and _frame_times[0] < now - 1.0:
         _frame_times.popleft()
-    if ANNOUNCE_EVERY_SEC > 0 and now - _last_announce >= ANNOUNCE_EVERY_SEC:
+    announce_every = _announce_every_sec()
+    if announce_every > 0 and now - _last_announce >= announce_every:
         _last_announce = now
         return Say(f"frame received, {len(_frame_times)} per second")
     return None
+
+
+def _nav_say(jpeg_bytes: bytes) -> Say | None:
+    """Optional navigation stage. Off unless SAW_NAV=1 so proximity stays the live default."""
+    if (os.environ.get("SAW_NAV") or "0").strip() in {"0", "", "false", "off"}:
+        return None
+    try:
+        from server.nav import analyze
+    except ImportError:
+        return None
+    result = analyze(jpeg_bytes)
+    text = (result.utterance or "").strip()
+    if not text:
+        return None
+    return Say(text, urgent=bool(result.should_stop))
 
 
 async def on_frame(jpeg_bytes: bytes, ts: int) -> Response:
@@ -268,6 +297,9 @@ async def on_frame(jpeg_bytes: bytes, ts: int) -> Response:
     announce = _demo_announce()
     if announce:
         out.append(announce)
+    nav = _nav_say(jpeg_bytes)
+    if nav:
+        out.append(nav)
     return out or None
 
 

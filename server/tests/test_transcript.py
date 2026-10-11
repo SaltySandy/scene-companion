@@ -76,7 +76,9 @@ async def test_wav_through_protocol_returns_final_transcript() -> None:
     import server.ai_hook as hook
 
     previous_announce = hook.ANNOUNCE_EVERY_SEC
+    previous_announce_env = os.environ.get("SAW_DEMO_ANNOUNCE_SEC")
     hook.ANNOUNCE_EVERY_SEC = 0
+    os.environ["SAW_DEMO_ANNOUNCE_SEC"] = "0"
 
     import uvicorn
     import websockets
@@ -121,6 +123,10 @@ async def test_wav_through_protocol_returns_final_transcript() -> None:
             finals = await asyncio.wait_for(view, timeout=5)
     finally:
         hook.ANNOUNCE_EVERY_SEC = previous_announce
+        if previous_announce_env is None:
+            os.environ.pop("SAW_DEMO_ANNOUNCE_SEC", None)
+        else:
+            os.environ["SAW_DEMO_ANNOUNCE_SEC"] = previous_announce_env
         server.should_exit = True
         await task
 
