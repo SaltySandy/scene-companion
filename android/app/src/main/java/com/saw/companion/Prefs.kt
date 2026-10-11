@@ -17,10 +17,16 @@ class Prefs(context: Context) {
             sp.edit().putBoolean(KEY_MIC, value).apply()
         }
 
-    val width: Int get() = sp.getInt(KEY_W, 640)
-    val height: Int get() = sp.getInt(KEY_H, 480)
-    val fps: Int get() = sp.getInt(KEY_FPS, 8)
-    val quality: Int get() = sp.getInt(KEY_Q, 70)
+    var qualityLevel: QualityLevel
+        get() = QualityLevel.fromKey(sp.getString(KEY_LEVEL, null))
+        set(value) {
+            sp.edit().putString(KEY_LEVEL, value.name).apply()
+        }
+
+    val width: Int get() = qualityLevel.width
+    val height: Int get() = qualityLevel.height
+    val fps: Int get() = qualityLevel.fps
+    val quality: Int get() = qualityLevel.jpegQuality
 
     fun parsedHost(): String {
         val raw = hostPort.trim()
@@ -43,5 +49,6 @@ class Prefs(context: Context) {
         private const val KEY_H = "height"
         private const val KEY_FPS = "fps"
         private const val KEY_Q = "quality"
+        private const val KEY_LEVEL = "quality_level"
     }
 }

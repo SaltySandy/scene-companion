@@ -86,6 +86,28 @@ class StreamClient(
         }
     }
 
+    /** Tells the laptop the current stream settings (sent on connect and when quality changes). */
+    fun sendConfig(target: WebSocket? = null) {
+        val ws = target ?: socketRef.get() ?: return
+        if (target == null && !connected) return
+        try {
+            ws.send(
+                Protocol.encodeJson(
+                    Protocol.TYPE_CONFIG,
+                    mapOf(
+                        "width" to prefs.width,
+                        "height" to prefs.height,
+                        "fps" to prefs.fps,
+                        "quality" to prefs.quality,
+                        "mic" to prefs.micEnabled,
+                        "level" to prefs.qualityLevel.name.lowercase(),
+                    ),
+                ),
+            )
+        } catch (_: Exception) {
+        }
+    }
+
     private fun connect() {
         if (!running) return
         setState(
@@ -96,9 +118,7 @@ class StreamClient(
                 "connecting"
             },
         )
-        val host = prefs.parsedHost()
-        val port = prefs.parsedPort()
-        val url = "ws://$host:$port/v1/stream"
+        val url = StreamUrl.build(prefs.hostPort)
         Log.i(TAG, "connecting $url")
         val req = Request.Builder().url(url).build()
         val ws = http.newWebSocket(req, object : WebSocketListener() {
@@ -113,18 +133,7 @@ class StreamClient(
                         mapOf("role" to "phone", "app" to "saw-android", "app_ver" to "0.1.0"),
                     ),
                 )
-                webSocket.send(
-                    Protocol.encodeJson(
-                        Protocol.TYPE_CONFIG,
-                        mapOf(
-                            "width" to prefs.width,
-                            "height" to prefs.height,
-                            "fps" to prefs.fps,
-                            "quality" to prefs.quality,
-                            "mic" to prefs.micEnabled,
-                        ),
-                    ),
-                )
+                sendConfig(webSocket)
                 setState(ConnectionState.CONNECTED, "connected")
                 listener.onHaptic(true)
                 SawSentry.breadcrumb("connected")

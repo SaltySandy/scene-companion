@@ -99,6 +99,56 @@
     </LinearLayout>
 
     <TextView
+        android:id="@+id/qualityLabel"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="8dp"
+        android:text="@string/quality_label"
+        android:textColor="@color/muted"
+        android:textSize="16sp" />
+
+    <RadioGroup
+        android:id="@+id/qualityGroup"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:contentDescription="@string/quality_cd"
+        android:orientation="horizontal">
+
+        <RadioButton
+            android:id="@+id/qualityLow"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:contentDescription="@string/quality_low_cd"
+            android:minHeight="56dp"
+            android:text="@string/quality_low"
+            android:textColor="@color/ink"
+            android:textSize="18sp" />
+
+        <RadioButton
+            android:id="@+id/qualityMedium"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:contentDescription="@string/quality_medium_cd"
+            android:minHeight="56dp"
+            android:text="@string/quality_medium"
+            android:textColor="@color/ink"
+            android:textSize="18sp" />
+
+        <RadioButton
+            android:id="@+id/qualityHigh"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:contentDescription="@string/quality_high_cd"
+            android:minHeight="56dp"
+            android:text="@string/quality_high"
+            android:textColor="@color/ink"
+            android:textSize="18sp" />
+    </RadioGroup>
+
+    <TextView
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:layout_marginTop="4dp"

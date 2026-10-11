@@ -55,6 +55,14 @@ class MainActivity : AppCompatActivity() {
 
         binding.hostInput.setText(prefs.hostPort)
         binding.micToggle.isChecked = prefs.micEnabled
+        binding.qualityGroup.check(radioFor(prefs.qualityLevel))
+        binding.qualityGroup.setOnCheckedChangeListener { _, checkedId ->
+            val level = levelFor(checkedId) ?: return@setOnCheckedChangeListener
+            if (level == prefs.qualityLevel) return@setOnCheckedChangeListener
+            prefs.qualityLevel = level
+            StreamService.instance?.applyQuality()
+            announce(level.spoken)
+        }
 
         binding.hostInput.setOnFocusChangeListener { _, hasFocus ->
             if (!hasFocus) persistSettings()
@@ -148,6 +156,19 @@ class MainActivity : AppCompatActivity() {
             ev.packageName = packageName
             am.sendAccessibilityEvent(ev)
         }
+    }
+
+    private fun radioFor(level: QualityLevel): Int = when (level) {
+        QualityLevel.LOW -> R.id.qualityLow
+        QualityLevel.MEDIUM -> R.id.qualityMedium
+        QualityLevel.HIGH -> R.id.qualityHigh
+    }
+
+    private fun levelFor(id: Int): QualityLevel? = when (id) {
+        R.id.qualityLow -> QualityLevel.LOW
+        R.id.qualityMedium -> QualityLevel.MEDIUM
+        R.id.qualityHigh -> QualityLevel.HIGH
+        else -> null
     }
 
     private fun hasCamera(): Boolean =
