@@ -54,7 +54,7 @@ class StreamService : LifecycleService() {
         })
         client = streamClient
         streamClient.start()
-        camera = CameraStreamer(this, this, prefs) { jpeg, ts ->
+        camera = CameraStreamer(this, this, prefs, streamClient::readyToSend) { jpeg, ts ->
             streamClient.sendJpeg(jpeg, ts)
         }.also { it.start() }
         if (prefs.micEnabled) {

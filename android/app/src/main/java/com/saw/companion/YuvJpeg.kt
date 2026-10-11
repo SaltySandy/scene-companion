@@ -1,38 +1,25 @@
 package com.saw.companion
 
-import android.graphics.Bitmap
-import android.graphics.BitmapFactory
 import android.graphics.ImageFormat
-import android.graphics.Matrix
 import android.graphics.Rect
 import android.graphics.YuvImage
 import androidx.camera.core.ImageProxy
 import java.io.ByteArrayOutputStream
 
 object YuvJpeg {
-    fun toJpeg(image: ImageProxy, quality: Int): ByteArray? {
+    /** Encode once, upright: the NV21 buffer is rotated before compression. */
+    fun toJpeg(image: ImageProxy, quality: Int, rotationDegrees: Int): ByteArray? {
         val nv21 = yuv420ToNv21(image) ?: return null
-        val yuv = YuvImage(nv21, ImageFormat.NV21, image.width, image.height, null)
+        val rotation = FrameMath.normalizeRotation(rotationDegrees)
+        val upright = FrameMath.rotateNv21(nv21, image.width, image.height, rotation)
+        val swap = rotation == 90 || rotation == 270
+        val w = if (swap) image.height else image.width
+        val h = if (swap) image.width else image.height
+        val yuv = YuvImage(upright, ImageFormat.NV21, w, h, null)
         val out = ByteArrayOutputStream()
-        if (!yuv.compressToJpeg(Rect(0, 0, image.width, image.height), quality.coerceIn(20, 95), out)) {
+        if (!yuv.compressToJpeg(Rect(0, 0, w, h), quality.coerceIn(20, 95), out)) {
             return null
         }
-        var jpeg = out.toByteArray()
-        val rotation = image.imageInfo.rotationDegrees
-        if (rotation != 0) {
-            jpeg = rotateJpeg(jpeg, rotation, quality) ?: jpeg
-        }
-        return jpeg
-    }
-
-    private fun rotateJpeg(jpeg: ByteArray, degrees: Int, quality: Int): ByteArray? {
-        val src = BitmapFactory.decodeByteArray(jpeg, 0, jpeg.size) ?: return null
-        val matrix = Matrix().apply { postRotate(degrees.toFloat()) }
-        val rotated = Bitmap.createBitmap(src, 0, 0, src.width, src.height, matrix, true)
-        if (rotated !== src) src.recycle()
-        val out = ByteArrayOutputStream()
-        rotated.compress(Bitmap.CompressFormat.JPEG, quality.coerceIn(20, 95), out)
-        rotated.recycle()
         return out.toByteArray()
     }
 

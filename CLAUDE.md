@@ -46,7 +46,7 @@ Owners: A = data and lineage, B = AI/ML, C = Android and demo.
 | 2 | feat(server): FrameRecord + JSONL recorder (`server/frame_record.py`, `server/recorder.py`, `SAW_RECORD=1`) | A | done |
 | 3 | feat(tools): `scripts/session_report.py` (latency p50/p95, drops, capture_ts gaps) | A | done |
 | 3a | feat(lineage): ping/pong clock sync, `clock_offset_ms`/`clock_rtt_ms` in FrameRecord | A+C | done |
-| 4 | fix(android): fixed mount rotation; skip encoding while disconnected | C | |
+| 4 | fix(android): fixed mount rotation; skip encoding while disconnected | C | done |
 | 5 | feat(tools): `scripts/prelabel.py` VLM pre-labeling | B | |
 | 6 | feat(ai): `server/ai/depth.py` + `server/ai/proximity.py` (sectors, levels) | B | |
 | 7 | feat(tools): `scripts/eval_proximity.py` offline eval, tune thresholds | A+B | |

@@ -60,6 +60,12 @@ class StreamClient(
         setState(ConnectionState.STOPPED, "stopped")
     }
 
+    /** True when a frame sent now would go straight out. The camera skips encoding otherwise. */
+    fun readyToSend(): Boolean {
+        val ws = socketRef.get() ?: return false
+        return connected && ws.queueSize() == 0L && !sending.get()
+    }
+
     fun sendJpeg(jpeg: ByteArray, timestampMs: Long): Boolean {
         val ws = socketRef.get() ?: return false
         if (!connected) return false
