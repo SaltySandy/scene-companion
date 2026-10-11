@@ -1,0 +1,956 @@
+{
+  "generated_at": "2026-10-11T19:21:14Z",
+  "mode": "inprocess",
+  "navigator": "baseline",
+  "note": "AI-generated synthetic test scenes (not real photos). Same room throughout: 4 black stackable chairs, folding table, gray door with red EXIT sign. 640x480 versions match the phone stream (JPEG q70).",
+  "scenes": [
+    {
+      "id": "01_entry_overview",
+      "pred": {
+        "exit": {
+          "visible": "yes",
+          "bearing": "right",
+          "distance": "far",
+          "distance_m": 7.0
+        },
+        "obstacles": [
+          {
+            "label": "chair",
+            "bearing": "left",
+            "distance": "mid",
+            "distance_m": 3.0,
+            "ahead": false
+          },
+          {
+            "label": "chair",
+            "bearing": "center",
+            "distance": "mid",
+            "distance_m": 3.0,
+            "ahead": true
+          },
+          {
+            "label": "chair",
+            "bearing": "right",
+            "distance": "near",
+            "distance_m": 1.5,
+            "ahead": true
+          }
+        ],
+        "should_stop": false,
+        "arrived": false,
+        "utterance": "Exit to your right. Chair ahead, keep to the side.",
+        "obstacle_ahead": true,
+        "nearest_obstacle_distance": "near"
+      },
+      "truth": {
+        "exit_visible": "yes",
+        "exit_bearing": "right",
+        "exit_distance": "far",
+        "obstacle_ahead": true,
+        "nearest_obstacle_distance": "near",
+        "should_stop": false,
+        "arrived": false,
+        "utterance": "Exit ahead slightly right. Chair ahead on your right, keep left of it."
+      },
+      "fields": {
+        "exit_visible": 1.0,
+        "exit_bearing": 1.0,
+        "exit_distance": 1.0,
+        "obstacle_ahead": 1.0,
+        "nearest_obstacle_distance": 1.0,
+        "should_stop": 1.0,
+        "arrived": 1.0,
+        "utterance": 1.0
+      },
+      "score": 1.0,
+      "utterance": {
+        "score": 1.0,
+        "hits": [
+          {
+            "name": "direction",
+            "words": [
+              "right"
+            ],
+            "required": true
+          },
+          {
+            "name": "obstacle",
+            "words": [
+              "chair",
+              "chair",
+              "wall",
+              "obstacle"
+            ],
+            "required": true
+          }
+        ],
+        "misses": [],
+        "doorway_trap": false,
+        "pred": "Exit to your right. Chair ahead, keep to the side.",
+        "ref": "Exit ahead slightly right. Chair ahead on your right, keep left of it."
+      },
+      "spoken": "Exit to your right. Chair ahead, keep to the side.",
+      "hook_says": [],
+      "proximity": null
+    },
+    {
+      "id": "02_chair_blocking",
+      "pred": {
+        "exit": {
+          "visible": "yes",
+          "bearing": "right",
+          "distance": "far",
+          "distance_m": 7.0
+        },
+        "obstacles": [
+          {
+            "label": "chair",
+            "bearing": "left",
+            "distance": "mid",
+            "distance_m": 3.0,
+            "ahead": false
+          },
+          {
+            "label": "chair",
+            "bearing": "center",
+            "distance": "close",
+            "distance_m": 0.8,
+            "ahead": true
+          }
+        ],
+        "should_stop": true,
+        "arrived": false,
+        "utterance": "Stop. Chair directly ahead. Step to the side, then continue to the exit.",
+        "obstacle_ahead": true,
+        "nearest_obstacle_distance": "close"
+      },
+      "truth": {
+        "exit_visible": "yes",
+        "exit_bearing": "right",
+        "exit_distance": "mid",
+        "obstacle_ahead": true,
+        "nearest_obstacle_distance": "close",
+        "should_stop": true,
+        "arrived": false,
+        "utterance": "Stop. Chair directly ahead. Step right, then continue forward to the exit."
+      },
+      "fields": {
+        "exit_visible": 1.0,
+        "exit_bearing": 1.0,
+        "exit_distance": 0.0,
+        "obstacle_ahead": 1.0,
+        "nearest_obstacle_distance": 1.0,
+        "should_stop": 1.0,
+        "arrived": 1.0,
+        "utterance": 0.667
+      },
+      "score": 0.8334,
+      "utterance": {
+        "score": 0.667,
+        "hits": [
+          {
+            "name": "stop",
+            "words": [
+              "stop"
+            ],
+            "required": true
+          },
+          {
+            "name": "obstacle",
+            "words": [
+              "chair",
+              "chair",
+              "wall",
+              "obstacle"
+            ],
+            "required": true
+          }
+        ],
+        "misses": [
+          {
+            "name": "direction",
+            "words": [
+              "right"
+            ],
+            "required": true
+          }
+        ],
+        "doorway_trap": false,
+        "pred": "Stop. Chair directly ahead. Step to the side, then continue to the exit.",
+        "ref": "Stop. Chair directly ahead. Step right, then continue forward to the exit."
+      },
+      "spoken": "Stop. Chair directly ahead. Step to the side, then continue to the exit.",
+      "hook_says": [],
+      "proximity": null
+    },
+    {
+      "id": "03_exit_at_right_edge",
+      "pred": {
+        "exit": {
+          "visible": "yes",
+          "bearing": "right",
+          "distance": "far",
+          "distance_m": 7.0
+        },
+        "obstacles": [
+          {
+            "label": "chair",
+            "bearing": "left",
+            "distance": "mid",
+            "distance_m": 3.0,
+            "ahead": false
+          },
+          {
+            "label": "chair",
+            "bearing": "right",
+            "distance": "mid",
+            "distance_m": 3.0,
+            "ahead": false
+          }
+        ],
+        "should_stop": false,
+        "arrived": false,
+        "utterance": "Exit to your right.",
+        "obstacle_ahead": false,
+        "nearest_obstacle_distance": "mid"
+      },
+      "truth": {
+        "exit_visible": "partial",
+        "exit_bearing": "right",
+        "exit_distance": "far",
+        "obstacle_ahead": false,
+        "nearest_obstacle_distance": "none",
+        "should_stop": false,
+        "arrived": false,
+        "utterance": "Exit is to your right. Turn right."
+      },
+      "fields": {
+        "exit_visible": 0.0,
+        "exit_bearing": 1.0,
+        "exit_distance": 1.0,
+        "obstacle_ahead": 1.0,
+        "nearest_obstacle_distance": 0.0,
+        "should_stop": 1.0,
+        "arrived": 1.0,
+        "utterance": 1.0
+      },
+      "score": 0.75,
+      "utterance": {
+        "score": 1.0,
+        "hits": [
+          {
+            "name": "direction",
+            "words": [
+              "right"
+            ],
+            "required": true
+          }
+        ],
+        "misses": [],
+        "doorway_trap": false,
+        "pred": "Exit to your right.",
+        "ref": "Exit is to your right. Turn right."
+      },
+      "spoken": "Exit to your right.",
+      "hook_says": [],
+      "proximity": null
+    },
+    {
+      "id": "04_arrived_at_exit",
+      "pred": {
+        "exit": {
+          "visible": "yes",
+          "bearing": "center",
+          "distance": "close",
+          "distance_m": 1.5
+        },
+        "obstacles": [
+          {
+            "label": "chair",
+            "bearing": "left",
+            "distance": "near",
+            "distance_m": 1.5,
+            "ahead": true
+          },
+          {
+            "label": "chair",
+            "bearing": "center",
+            "distance": "near",
+            "distance_m": 1.5,
+            "ahead": true
+          }
+        ],
+        "should_stop": true,
+        "arrived": true,
+        "utterance": "You have reached the exit door. Handle on the right.",
+        "obstacle_ahead": true,
+        "nearest_obstacle_distance": "near"
+      },
+      "truth": {
+        "exit_visible": "yes",
+        "exit_bearing": "center",
+        "exit_distance": "close",
+        "obstacle_ahead": true,
+        "nearest_obstacle_distance": "near",
+        "should_stop": true,
+        "arrived": true,
+        "utterance": "You have reached the exit door. Handle on the right."
+      },
+      "fields": {
+        "exit_visible": 1.0,
+        "exit_bearing": 1.0,
+        "exit_distance": 1.0,
+        "obstacle_ahead": 1.0,
+        "nearest_obstacle_distance": 1.0,
+        "should_stop": 1.0,
+        "arrived": 1.0,
+        "utterance": 1.0
+      },
+      "score": 1.0,
+      "utterance": {
+        "score": 1.0,
+        "hits": [
+          {
+            "name": "stop_or_arrive",
+            "words": [
+              "stop",
+              "reached",
+              "arrived",
+              "here"
+            ],
+            "required": true
+          },
+          {
+            "name": "exit",
+            "words": [
+              "exit",
+              "door"
+            ],
+            "required": true
+          }
+        ],
+        "misses": [],
+        "doorway_trap": false,
+        "pred": "You have reached the exit door. Handle on the right.",
+        "ref": "You have reached the exit door. Handle on the right."
+      },
+      "spoken": "You have reached the exit door. Handle on the right.",
+      "hook_says": [],
+      "proximity": null
+    },
+    {
+      "id": "05_low_light",
+      "pred": {
+        "exit": {
+          "visible": "yes",
+          "bearing": "right",
+          "distance": "close",
+          "distance_m": 1.5
+        },
+        "obstacles": [
+          {
+            "label": "chair",
+            "bearing": "left",
+            "distance": "near",
+            "distance_m": 1.5,
+            "ahead": true
+          },
+          {
+            "label": "chair",
+            "bearing": "center",
+            "distance": "near",
+            "distance_m": 1.5,
+            "ahead": true
+          },
+          {
+            "label": "chair",
+            "bearing": "right",
+            "distance": "close",
+            "distance_m": 0.8,
+            "ahead": true
+          }
+        ],
+        "should_stop": true,
+        "arrived": false,
+        "utterance": "Stop. Chair directly ahead. Step to the side, then continue to the exit.",
+        "obstacle_ahead": true,
+        "nearest_obstacle_distance": "close"
+      },
+      "truth": {
+        "exit_visible": "yes",
+        "exit_bearing": "right",
+        "exit_distance": "far",
+        "obstacle_ahead": true,
+        "nearest_obstacle_distance": "near",
+        "should_stop": false,
+        "arrived": false,
+        "utterance": "Exit ahead slightly right. Chair ahead on your right, keep left of it."
+      },
+      "fields": {
+        "exit_visible": 1.0,
+        "exit_bearing": 1.0,
+        "exit_distance": 0.0,
+        "obstacle_ahead": 1.0,
+        "nearest_obstacle_distance": 0.0,
+        "should_stop": 0.0,
+        "arrived": 1.0,
+        "utterance": 0.5
+      },
+      "score": 0.5625,
+      "utterance": {
+        "score": 0.5,
+        "hits": [
+          {
+            "name": "obstacle",
+            "words": [
+              "chair",
+              "chair",
+              "wall",
+              "obstacle"
+            ],
+            "required": true
+          }
+        ],
+        "misses": [
+          {
+            "name": "direction",
+            "words": [
+              "right"
+            ],
+            "required": true
+          }
+        ],
+        "doorway_trap": false,
+        "pred": "Stop. Chair directly ahead. Step to the side, then continue to the exit.",
+        "ref": "Exit ahead slightly right. Chair ahead on your right, keep left of it."
+      },
+      "spoken": "Stop. Chair directly ahead. Step to the side, then continue to the exit.",
+      "hook_says": [],
+      "proximity": null
+    },
+    {
+      "id": "06_plain_wall_close",
+      "pred": {
+        "exit": {
+          "visible": "no",
+          "bearing": "none",
+          "distance": "none",
+          "distance_m": null
+        },
+        "obstacles": [
+          {
+            "label": "wall",
+            "bearing": "center",
+            "distance": "close",
+            "distance_m": 0.6,
+            "ahead": true
+          }
+        ],
+        "should_stop": true,
+        "arrived": false,
+        "utterance": "Stop. Wall directly ahead.",
+        "obstacle_ahead": true,
+        "nearest_obstacle_distance": "close"
+      },
+      "truth": {
+        "exit_visible": "no",
+        "exit_bearing": "none",
+        "exit_distance": "none",
+        "obstacle_ahead": true,
+        "nearest_obstacle_distance": "close",
+        "should_stop": true,
+        "arrived": false,
+        "utterance": "Stop. Wall directly ahead."
+      },
+      "fields": {
+        "exit_visible": 1.0,
+        "exit_bearing": 1.0,
+        "exit_distance": 1.0,
+        "obstacle_ahead": 1.0,
+        "nearest_obstacle_distance": 1.0,
+        "should_stop": 1.0,
+        "arrived": 1.0,
+        "utterance": 1.0
+      },
+      "score": 1.0,
+      "utterance": {
+        "score": 1.0,
+        "hits": [
+          {
+            "name": "stop",
+            "words": [
+              "stop"
+            ],
+            "required": true
+          },
+          {
+            "name": "obstacle",
+            "words": [
+              "wall",
+              "chair",
+              "wall",
+              "obstacle"
+            ],
+            "required": true
+          }
+        ],
+        "misses": [],
+        "doorway_trap": false,
+        "pred": "Stop. Wall directly ahead.",
+        "ref": "Stop. Wall directly ahead."
+      },
+      "spoken": "Stop. Wall directly ahead.",
+      "hook_says": [],
+      "proximity": null
+    },
+    {
+      "id": "07_motion_blur_partial_chair",
+      "pred": {
+        "exit": {
+          "visible": "yes",
+          "bearing": "center",
+          "distance": "far",
+          "distance_m": 7.0
+        },
+        "obstacles": [
+          {
+            "label": "chair",
+            "bearing": "right",
+            "distance": "near",
+            "distance_m": 1.5,
+            "ahead": true
+          }
+        ],
+        "should_stop": false,
+        "arrived": false,
+        "utterance": "Exit ahead. Chair ahead, keep to the side.",
+        "obstacle_ahead": true,
+        "nearest_obstacle_distance": "near"
+      },
+      "truth": {
+        "exit_visible": "partial",
+        "exit_bearing": "center",
+        "exit_distance": "mid",
+        "obstacle_ahead": true,
+        "nearest_obstacle_distance": "near",
+        "should_stop": false,
+        "arrived": false,
+        "utterance": "Chair close on your right. Exit ahead."
+      },
+      "fields": {
+        "exit_visible": 0.0,
+        "exit_bearing": 1.0,
+        "exit_distance": 0.0,
+        "obstacle_ahead": 1.0,
+        "nearest_obstacle_distance": 1.0,
+        "should_stop": 1.0,
+        "arrived": 1.0,
+        "utterance": 1.0
+      },
+      "score": 0.75,
+      "utterance": {
+        "score": 1.0,
+        "hits": [
+          {
+            "name": "direction",
+            "words": [
+              "ahead",
+              "forward",
+              "straight"
+            ],
+            "required": true
+          },
+          {
+            "name": "obstacle",
+            "words": [
+              "chair",
+              "chair",
+              "wall",
+              "obstacle"
+            ],
+            "required": true
+          }
+        ],
+        "misses": [],
+        "doorway_trap": false,
+        "pred": "Exit ahead. Chair ahead, keep to the side.",
+        "ref": "Chair close on your right. Exit ahead."
+      },
+      "spoken": "Exit ahead. Chair ahead, keep to the side.",
+      "hook_says": [],
+      "proximity": null
+    },
+    {
+      "id": "08_exit_not_visible",
+      "pred": {
+        "exit": {
+          "visible": "no",
+          "bearing": "none",
+          "distance": "none",
+          "distance_m": null
+        },
+        "obstacles": [
+          {
+            "label": "chair",
+            "bearing": "left",
+            "distance": "near",
+            "distance_m": 1.5,
+            "ahead": true
+          }
+        ],
+        "should_stop": false,
+        "arrived": false,
+        "utterance": "Chair ahead. Exit is not in view. Turn and scan for the exit sign.",
+        "obstacle_ahead": true,
+        "nearest_obstacle_distance": "near"
+      },
+      "truth": {
+        "exit_visible": "no",
+        "exit_bearing": "behind",
+        "exit_distance": "none",
+        "obstacle_ahead": true,
+        "nearest_obstacle_distance": "near",
+        "should_stop": false,
+        "arrived": false,
+        "utterance": "Chair ahead on your left. Exit is not in view. Turn and scan for the exit sign."
+      },
+      "fields": {
+        "exit_visible": 1.0,
+        "exit_bearing": 0.0,
+        "exit_distance": 1.0,
+        "obstacle_ahead": 1.0,
+        "nearest_obstacle_distance": 1.0,
+        "should_stop": 1.0,
+        "arrived": 1.0,
+        "utterance": 1.0
+      },
+      "score": 0.875,
+      "utterance": {
+        "score": 1.0,
+        "hits": [
+          {
+            "name": "scan",
+            "words": [
+              "turn",
+              "scan",
+              "behind",
+              "not"
+            ],
+            "required": true
+          },
+          {
+            "name": "obstacle",
+            "words": [
+              "chair",
+              "chair",
+              "wall",
+              "obstacle"
+            ],
+            "required": true
+          }
+        ],
+        "misses": [],
+        "doorway_trap": false,
+        "pred": "Chair ahead. Exit is not in view. Turn and scan for the exit sign.",
+        "ref": "Chair ahead on your left. Exit is not in view. Turn and scan for the exit sign."
+      },
+      "spoken": "Chair ahead. Exit is not in view. Turn and scan for the exit sign.",
+      "hook_says": [],
+      "proximity": null
+    }
+  ],
+  "field_averages": {
+    "exit_visible": 0.75,
+    "exit_bearing": 0.875,
+    "exit_distance": 0.625,
+    "obstacle_ahead": 1.0,
+    "nearest_obstacle_distance": 0.75,
+    "should_stop": 0.875,
+    "arrived": 1.0,
+    "utterance": 0.8959
+  },
+  "overall": 0.8464,
+  "proximity_overall": null,
+  "proximity_available": false,
+  "n_scenes": 8,
+  "sequence": {
+    "ids": [
+      "01_entry_overview",
+      "02_chair_blocking",
+      "04_arrived_at_exit"
+    ],
+    "scenes": [
+      {
+        "id": "01_entry_overview",
+        "pred": {
+          "exit": {
+            "visible": "yes",
+            "bearing": "right",
+            "distance": "far",
+            "distance_m": 7.0
+          },
+          "obstacles": [
+            {
+              "label": "chair",
+              "bearing": "left",
+              "distance": "mid",
+              "distance_m": 3.0,
+              "ahead": false
+            },
+            {
+              "label": "chair",
+              "bearing": "center",
+              "distance": "mid",
+              "distance_m": 3.0,
+              "ahead": true
+            },
+            {
+              "label": "chair",
+              "bearing": "right",
+              "distance": "near",
+              "distance_m": 1.5,
+              "ahead": true
+            }
+          ],
+          "should_stop": false,
+          "arrived": false,
+          "utterance": "Exit to your right. Chair ahead, keep to the side.",
+          "obstacle_ahead": true,
+          "nearest_obstacle_distance": "near"
+        },
+        "truth": {
+          "exit_visible": "yes",
+          "exit_bearing": "right",
+          "exit_distance": "far",
+          "obstacle_ahead": true,
+          "nearest_obstacle_distance": "near",
+          "should_stop": false,
+          "arrived": false,
+          "utterance": "Exit ahead slightly right. Chair ahead on your right, keep left of it."
+        },
+        "fields": {
+          "exit_visible": 1.0,
+          "exit_bearing": 1.0,
+          "exit_distance": 1.0,
+          "obstacle_ahead": 1.0,
+          "nearest_obstacle_distance": 1.0,
+          "should_stop": 1.0,
+          "arrived": 1.0,
+          "utterance": 1.0
+        },
+        "score": 1.0,
+        "utterance": {
+          "score": 1.0,
+          "hits": [
+            {
+              "name": "direction",
+              "words": [
+                "right"
+              ],
+              "required": true
+            },
+            {
+              "name": "obstacle",
+              "words": [
+                "chair",
+                "chair",
+                "wall",
+                "obstacle"
+              ],
+              "required": true
+            }
+          ],
+          "misses": [],
+          "doorway_trap": false,
+          "pred": "Exit to your right. Chair ahead, keep to the side.",
+          "ref": "Exit ahead slightly right. Chair ahead on your right, keep left of it."
+        },
+        "spoken": "Exit to your right. Chair ahead, keep to the side.",
+        "hook_says": [],
+        "proximity": null
+      },
+      {
+        "id": "02_chair_blocking",
+        "pred": {
+          "exit": {
+            "visible": "yes",
+            "bearing": "right",
+            "distance": "far",
+            "distance_m": 7.0
+          },
+          "obstacles": [
+            {
+              "label": "chair",
+              "bearing": "left",
+              "distance": "mid",
+              "distance_m": 3.0,
+              "ahead": false
+            },
+            {
+              "label": "chair",
+              "bearing": "center",
+              "distance": "close",
+              "distance_m": 0.8,
+              "ahead": true
+            }
+          ],
+          "should_stop": true,
+          "arrived": false,
+          "utterance": "Stop. Chair directly ahead. Step to the side, then continue to the exit.",
+          "obstacle_ahead": true,
+          "nearest_obstacle_distance": "close"
+        },
+        "truth": {
+          "exit_visible": "yes",
+          "exit_bearing": "right",
+          "exit_distance": "mid",
+          "obstacle_ahead": true,
+          "nearest_obstacle_distance": "close",
+          "should_stop": true,
+          "arrived": false,
+          "utterance": "Stop. Chair directly ahead. Step right, then continue forward to the exit."
+        },
+        "fields": {
+          "exit_visible": 1.0,
+          "exit_bearing": 1.0,
+          "exit_distance": 0.0,
+          "obstacle_ahead": 1.0,
+          "nearest_obstacle_distance": 1.0,
+          "should_stop": 1.0,
+          "arrived": 1.0,
+          "utterance": 0.667
+        },
+        "score": 0.8334,
+        "utterance": {
+          "score": 0.667,
+          "hits": [
+            {
+              "name": "stop",
+              "words": [
+                "stop"
+              ],
+              "required": true
+            },
+            {
+              "name": "obstacle",
+              "words": [
+                "chair",
+                "chair",
+                "wall",
+                "obstacle"
+              ],
+              "required": true
+            }
+          ],
+          "misses": [
+            {
+              "name": "direction",
+              "words": [
+                "right"
+              ],
+              "required": true
+            }
+          ],
+          "doorway_trap": false,
+          "pred": "Stop. Chair directly ahead. Step to the side, then continue to the exit.",
+          "ref": "Stop. Chair directly ahead. Step right, then continue forward to the exit."
+        },
+        "spoken": "Stop. Chair directly ahead. Step to the side, then continue to the exit.",
+        "hook_says": [],
+        "proximity": null
+      },
+      {
+        "id": "04_arrived_at_exit",
+        "pred": {
+          "exit": {
+            "visible": "yes",
+            "bearing": "center",
+            "distance": "close",
+            "distance_m": 1.5
+          },
+          "obstacles": [
+            {
+              "label": "chair",
+              "bearing": "left",
+              "distance": "near",
+              "distance_m": 1.5,
+              "ahead": true
+            },
+            {
+              "label": "chair",
+              "bearing": "center",
+              "distance": "near",
+              "distance_m": 1.5,
+              "ahead": true
+            }
+          ],
+          "should_stop": true,
+          "arrived": true,
+          "utterance": "You have reached the exit door. Handle on the right.",
+          "obstacle_ahead": true,
+          "nearest_obstacle_distance": "near"
+        },
+        "truth": {
+          "exit_visible": "yes",
+          "exit_bearing": "center",
+          "exit_distance": "close",
+          "obstacle_ahead": true,
+          "nearest_obstacle_distance": "near",
+          "should_stop": true,
+          "arrived": true,
+          "utterance": "You have reached the exit door. Handle on the right."
+        },
+        "fields": {
+          "exit_visible": 1.0,
+          "exit_bearing": 1.0,
+          "exit_distance": 1.0,
+          "obstacle_ahead": 1.0,
+          "nearest_obstacle_distance": 1.0,
+          "should_stop": 1.0,
+          "arrived": 1.0,
+          "utterance": 1.0
+        },
+        "score": 1.0,
+        "utterance": {
+          "score": 1.0,
+          "hits": [
+            {
+              "name": "stop_or_arrive",
+              "words": [
+                "stop",
+                "reached",
+                "arrived",
+                "here"
+              ],
+              "required": true
+            },
+            {
+              "name": "exit",
+              "words": [
+                "exit",
+                "door"
+              ],
+              "required": true
+            }
+          ],
+          "misses": [],
+          "doorway_trap": false,
+          "pred": "You have reached the exit door. Handle on the right.",
+          "ref": "You have reached the exit door. Handle on the right."
+        },
+        "spoken": "You have reached the exit door. Handle on the right.",
+        "hook_says": [],
+        "proximity": null
+      }
+    ],
+    "overall": 0.9445,
+    "continuity": {
+      "no_left_flip": 1.0,
+      "arrive_only_last": 1.0,
+      "middle_stop": 1.0,
+      "score": 1.0
+    }
+  },
+  "url": null,
+  "table": "scene                         vis bear dist obst near stop  arr  utt  nav prox\n------------------------------------------------------------------------------\n01_entry_overview               Y    Y    Y    Y    Y    Y    Y    Y 100%  n/a\n02_chair_blocking               Y    Y    .    Y    Y    Y    Y  0.7  83%  n/a\n03_exit_at_right_edge           .    Y    Y    Y    .    Y    Y    Y  75%  n/a\n04_arrived_at_exit              Y    Y    Y    Y    Y    Y    Y    Y 100%  n/a\n05_low_light                    Y    Y    .    Y    .    .    Y  0.5  56%  n/a\n06_plain_wall_close             Y    Y    Y    Y    Y    Y    Y    Y 100%  n/a\n07_motion_blur_partial_chair    .    Y    .    Y    Y    Y    Y    Y  75%  n/a\n08_exit_not_visible             Y    .    Y    Y    Y    Y    Y    Y  88%  n/a\n------------------------------------------------------------------------------\nfield avg / overall           0.8  0.9  0.6    Y  0.8  0.9    Y  0.9  85%  n/a\n\nOverall nav 84.6%   proximity n/a   navigator=baseline mode=inprocess\nSequence 01_entry_overview \u2192 02_chair_blocking \u2192 04_arrived_at_exit: nav 94.5%  continuity 100%\n  01_entry_overview: 100%  say='Exit to your right. Chair ahead, keep to the side.'\n  02_chair_blocking: 83%  say='Stop. Chair directly ahead. Step to the side, then continue to the exit.'\n  04_arrived_at_exit: 100%  say='You have reached the exit door. Handle on the right.'"
+}

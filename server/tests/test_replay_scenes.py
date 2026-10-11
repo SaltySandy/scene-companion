@@ -8,7 +8,6 @@ import os
 import pytest
 
 os.environ.setdefault("SENTRY_DSN", "")
-os.environ.setdefault("SAW_DEMO_ANNOUNCE_SEC", "0")
 os.environ.setdefault("SAW_NAV", "0")
 
 from server.nav import (  # noqa: E402
