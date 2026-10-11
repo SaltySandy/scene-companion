@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import logging
 import os
 import socket
@@ -17,6 +18,7 @@ from sentry_sdk.integrations.asyncio import AsyncioIntegration
 from sentry_sdk.integrations.fastapi import FastApiIntegration
 
 from server import protocol as proto
+from server.event_sinks import sinks
 from server.hub import hub, play, say
 
 log = logging.getLogger("saw")
@@ -82,6 +84,7 @@ async def lifespan(_app: FastAPI):
         stream=sys.stdout,
     )
     hub.ensure_worker()
+    sinks.start()
     ip = lan_ip()
     port = DEFAULT_PORT
     print()
@@ -96,6 +99,7 @@ async def lifespan(_app: FastAPI):
     print("=" * 60)
     print()
     yield
+    sinks.stop()
     if hub.worker_task:
         hub.worker_task.cancel()
 
@@ -139,6 +143,33 @@ async def http_say(request: Request) -> JSONResponse:
         return JSONResponse({"ok": False, "error": "empty text"}, status_code=400)
     await say(text, urgent=urgent)
     return JSONResponse({"ok": True, "text": text.strip(), "urgent": urgent})
+
+
+@app.post("/recall")
+async def http_recall(request: Request) -> JSONResponse:
+    body: dict = {}
+    if "application/json" in request.headers.get("content-type", ""):
+        raw = await request.json()
+        if isinstance(raw, dict):
+            body = raw
+    question = str(body.get("question") or body.get("text") or "").strip()
+    backend = body.get("backend")
+    if isinstance(backend, str):
+        backend = backend.strip().lower() or None
+    else:
+        backend = None
+    if not question:
+        return JSONResponse({"ok": False, "error": "empty question"}, status_code=400)
+    if backend not in (None, "snowflake", "tiger"):
+        return JSONResponse({"ok": False, "error": "backend must be snowflake or tiger"}, status_code=400)
+    try:
+        text, used = await asyncio.to_thread(sinks.recall, question, backend)
+    except Exception as exc:
+        log.warning("recall failed: %s", exc)
+        return JSONResponse({"ok": False, "error": str(exc), "backend": backend})
+    if text:
+        await say(text, urgent=False)
+    return JSONResponse({"ok": True, "text": text, "backend": used})
 
 
 @app.post("/play")

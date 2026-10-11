@@ -33,7 +33,9 @@
     .dot { width: 8px; height: 8px; border-radius: 50%; display: inline-block; margin-right: 6px; background: var(--bad); }
     .dot.on { background: var(--good); }
     textarea, input, button { font: inherit; }
-    textarea { width: 100%; min-height: 72px; background: #0b0d10; color: var(--ink); border: 1px solid #2a3340; border-radius: 8px; padding: 8px; resize: vertical; }
+    textarea, select { width: 100%; background: #0b0d10; color: var(--ink); border: 1px solid #2a3340; border-radius: 8px; padding: 8px; }
+    textarea { min-height: 72px; resize: vertical; }
+    select { width: auto; }
     .row { display: flex; gap: 8px; margin-top: 8px; align-items: center; }
     button { background: var(--accent); color: #1a1400; border: 0; border-radius: 8px; padding: 8px 12px; font-weight: 700; cursor: pointer; }
     button.ghost { background: transparent; color: var(--ink); border: 1px solid #2a3340; }
@@ -67,6 +69,18 @@
           <button type="button" id="sayBtn">Say</button>
           <button type="button" class="ghost" id="sayUrgent">Say urgent</button>
           <label class="chk"><input type="checkbox" id="urgentBox" /> urgent</label>
+        </div>
+      </div>
+      <div class="card">
+        <h2>Recall</h2>
+        <textarea id="recallText" placeholder="What happened in the last few minutes?">what happened recently</textarea>
+        <div class="row">
+          <button type="button" id="recallBtn">Recall</button>
+          <select id="recallBackend" aria-label="Recall backend">
+            <option value="">auto</option>
+            <option value="snowflake">snowflake</option>
+            <option value="tiger">tiger</option>
+          </select>
         </div>
       </div>
       <div class="card">
@@ -145,6 +159,17 @@
     }
     $("sayBtn").onclick = () => sendSay(false);
     $("sayUrgent").onclick = () => sendSay(true);
+    $("recallBtn").onclick = async () => {
+      const question = $("recallText").value;
+      const backend = $("recallBackend").value;
+      const r = await fetch("/recall", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ question, backend: backend || null }),
+      });
+      const j = await r.json();
+      log(j.ok ? ("recall (" + j.backend + "): " + j.text) : ("recall failed: " + j.error));
+    };
   </script>
 </body>
 </html>

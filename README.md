@@ -15,11 +15,19 @@ You need: Python 3.11+, a phone with USB debugging (or Wi-Fi), and `adb` from th
 
 ### 1. Run the laptop server
 
+macOS or Linux:
+
 ```bash
 ./run_server.sh
 ```
 
-On startup it prints the laptop **LAN IP** and URLs. Default port is **8765**.
+Windows (PowerShell):
+
+```powershell
+.\run_server.ps1
+```
+
+Both create a `.venv`, install `server/requirements.txt`, and start uvicorn. On startup the server prints the laptop **LAN IP** and URLs. Default port is **8765**. If Snowflake or TigerData env vars are unset, each logs one line that it is disabled and the stream behaves as before.
 
 Open the viewer: [http://127.0.0.1:8765/](http://127.0.0.1:8765/)
 
@@ -179,6 +187,29 @@ curl http://127.0.0.1:8765/debug/sentry
 ```
 
 On the phone, long-press the title **Scene Companion**.
+
+## Snowflake and TigerData
+
+Both are optional event logs. They are not on the camera path: `log_event` only enqueues, a background thread batch-inserts, and a full queue drops events. Connect, disconnect, and every `say()` are recorded. Copy `.env.example` to `.env` when you have credentials.
+
+**Snowflake** (`server/snowflake_store.py`): `SNOWFLAKE_ACCOUNT`, `SNOWFLAKE_USER`, `SNOWFLAKE_PASSWORD` or `SNOWFLAKE_PRIVATE_KEY_PATH`, plus `SNOWFLAKE_WAREHOUSE`, `SNOWFLAKE_DATABASE`, `SNOWFLAKE_SCHEMA`, `SNOWFLAKE_ROLE`. `ensure_schema()` creates `SCENE_EVENTS` (`ts`, `session_id`, `kind`, `text`, `hazard`, `meta VARIANT`). `recall()` calls `SNOWFLAKE.CORTEX.COMPLETE` over the latest events. A Cortex Search call is left commented in that function.
+
+**TigerData** (`server/tiger_store.py`): `TIGER_DATABASE_URL`. `ensure_schema()` creates `scene_events` and turns it into a hypertable when TimescaleDB is installed; otherwise it stays a plain table. `recent_events(window)` and `recall(question)` read that table. A pgvector/pgai search is left commented.
+
+`server/event_sinks.py` is the only fan-out. The server calls `log_event` once.
+
+```bash
+curl -X POST http://127.0.0.1:8765/recall \
+  -H 'content-type: application/json' \
+  -d '{"question":"what happened recently","backend":"snowflake"}'
+```
+
+`backend` is `snowflake`, `tiger`, or omitted (whichever store is configured; Snowflake wins if both are). The viewer page has a Recall box. Smoke checks, which need real credentials:
+
+```bash
+python scripts/snowflake_smoke.py
+python scripts/tiger_smoke.py
+```
 
 ## Known limitations
 

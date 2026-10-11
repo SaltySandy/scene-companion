@@ -12,6 +12,7 @@ from fastapi import WebSocket
 
 from server import protocol as proto
 from server.ai_hook import Play, Response, Say, on_frame
+from server.event_sinks import sinks
 
 log = logging.getLogger("saw")
 
@@ -34,11 +35,13 @@ class Hub:
                 pass
         self.phone = ws
         log.info("phone connected")
+        sinks.log_event("connect", "phone connected")
 
     def detach_phone(self, ws: WebSocket) -> None:
         if self.phone is ws:
             self.phone = None
             log.info("phone disconnected")
+            sinks.log_event("disconnect", "phone disconnected")
 
     def attach_viewer(self, ws: WebSocket) -> None:
         self.viewers.add(ws)
@@ -60,6 +63,7 @@ class Hub:
             proto.encode_json(proto.MsgType.SAY, text=str(text).strip(), urgent=bool(urgent))
         )
         log.info("say urgent=%s: %s", urgent, text)
+        sinks.log_event("say", str(text).strip(), meta={"urgent": bool(urgent)})
 
     async def play(self, audio_bytes: bytes, mime: str = "audio/wav", urgent: bool = False) -> None:
         if not audio_bytes:
