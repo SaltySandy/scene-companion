@@ -1,10 +1,8 @@
-fastapi==0.115.12
-uvicorn[standard]==0.34.2
-websockets==15.0.1
-httpx==0.28.1
-pytest==8.3.5
-pytest-asyncio==0.25.3
-sentry-sdk==2.71.0
-faster-whisper==1.2.1
-snowflake-connector-python==3.17.2
-psycopg[binary]==3.2.9
+# Core: the server needs these to start. Kept loose so they install on new Python versions.
+fastapi>=0.115
+uvicorn>=0.34
+websockets>=13,<17
+httpx>=0.28
+sentry-sdk>=2.0
+google-genai
+python-dotenv>=1.0

@@ -40,7 +40,9 @@ class Play:
 Response = Say | Play | Sequence[Say | Play] | None
 
 # Demo: announce roughly every N seconds so testers hear the loop.
-ANNOUNCE_EVERY_SEC = float(os.environ.get("SAW_DEMO_ANNOUNCE_SEC", "5"))
+# Off by default when the Gemini wall detector is on, so it doesn't talk over alerts.
+_default_announce = "0" if (os.environ.get("GEMINI_API_KEY") or os.environ.get("GOOGLE_API_KEY")) else "5"
+ANNOUNCE_EVERY_SEC = float(os.environ.get("SAW_DEMO_ANNOUNCE_SEC", _default_announce))
 
 _frame_times: deque[float] = deque()
 _last_announce = 0.0

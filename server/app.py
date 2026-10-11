@@ -10,6 +10,14 @@ import sys
 from contextlib import asynccontextmanager
 from pathlib import Path
 
+# Load GEMINI_API_KEY etc. from a .env file in the repo root, if present.
+try:
+    from dotenv import load_dotenv
+
+    load_dotenv(Path(__file__).resolve().parent.parent / ".env")
+except ImportError:
+    pass
+
 import sentry_sdk
 from fastapi import FastAPI, Request, WebSocket, WebSocketDisconnect
 from fastapi.responses import HTMLResponse, JSONResponse, PlainTextResponse
@@ -22,6 +30,7 @@ from server.ai_hook import on_transcript
 from server.event_sinks import sinks
 from server.hub import hub, play, say
 from server.transcribe import transcriber
+from server.wall_detector import detector as wall_detector
 
 log = logging.getLogger("saw")
 STATIC_DIR = Path(__file__).resolve().parent / "static"
@@ -89,6 +98,7 @@ async def lifespan(_app: FastAPI):
     sinks.start()
     transcriber.bind(asyncio.get_running_loop(), _emit_transcript)
     transcriber.start()
+    wall_detector.start(speak=say, status=_emit_wall_status)
     ip = lan_ip()
     port = DEFAULT_PORT
     print()
@@ -99,10 +109,15 @@ async def lifespan(_app: FastAPI):
     print(f"  Viewer : http://{ip}:{port}/")
     print(f"  USB    : adb reverse tcp:{port} tcp:{port}")
     print(f"           then phone host 127.0.0.1:{port}")
+    if wall_detector.enabled:
+        print(f"  Walls  : Gemini Live ({wall_detector.model}), check every {wall_detector.interval:.1f}s")
+    else:
+        print("  Walls  : OFF (set GEMINI_API_KEY in .env to enable)")
     print(f"  Say    : curl -X POST http://{ip}:{port}/say -H 'content-type: application/json' -d '{{\"text\":\"hello\"}}'")
     print("=" * 60)
     print()
     yield
+    await wall_detector.stop()
     transcriber.stop()
     sinks.stop()
     if hub.worker_task:
@@ -126,6 +141,12 @@ async def health() -> dict[str, object]:
         "phone_connected": hub.phone is not None,
         "viewers": len(hub.viewers),
         "lan_ip": lan_ip(),
+        "wall_detector": {
+            "enabled": wall_detector.enabled,
+            "connected": wall_detector.connected,
+            "model": wall_detector.model,
+            "last": wall_detector.last_verdict.level if wall_detector.last_verdict else None,
+        },
     }
 
 
@@ -287,6 +308,7 @@ async def _handle_phone_bytes(data: bytes) -> None:
     recv_ms = proto.now_ms()
     if msg.kind == proto.Kind.JPEG_FRAME:
         hub.submit_frame(msg.payload, msg.timestamp_ms)
+        wall_detector.submit(msg.payload, msg.timestamp_ms)
         await hub.broadcast_frame_to_viewers(msg.payload, msg.timestamp_ms, recv_ms)
     elif msg.kind == proto.Kind.MIC_PCM:
         # Enqueue only. Whisper runs on its own thread.
@@ -294,6 +316,10 @@ async def _handle_phone_bytes(data: bytes) -> None:
         await hub._broadcast_viewers_text(
             proto.encode_json(proto.MsgType.MIC, enabled=True, bytes=len(msg.payload), t=msg.timestamp_ms)
         )
+
+
+async def _emit_wall_status(status: dict) -> None:
+    await hub._broadcast_viewers_text(proto.encode_json(proto.MsgType.WALL, **status))
 
 
 async def _emit_transcript(text: str, is_final: bool, ts: int) -> None:

@@ -104,6 +104,28 @@ The stub logs every partial and final. Finals are written to the event sinks and
 
 ---
 
+## Wall detector (Gemini Live)
+
+`server/wall_detector.py` watches the camera feed with the **Gemini Live API** and warns the user when they are about to walk into a wall.
+
+1. Get a key at <https://aistudio.google.com/apikey>.
+2. Copy `.env.example` to `.env` and set `GEMINI_API_KEY=...`.
+3. Run the server as usual. The startup banner shows `Walls : Gemini Live (...)`.
+
+About once a second (the Live API's max video rate) the newest frame goes to one long-lived Live session. Gemini answers by calling the tool `report_wall_proximity` with `clear`, `approaching` (1–3 m) or `too_close` (under ~1 m). Then the phone hears:
+
+| Verdict | Phone says | Interrupts other speech? |
+| --- | --- | --- |
+| too_close | "Stop. Wall ahead. Back up." then "Still too close. Back up." every 2.5 s | yes (`urgent`) |
+| approaching | "Wall ahead, slow down." at most every 6 s | no |
+| back to clear | "Clear." (or "Okay, a little more room now.") | no |
+
+The viewer page has a **Wall detector** card that shows the live verdict (green, amber or flashing red). Sessions reconnect on their own (errors, `go_away`, and every 8 minutes), and context compression keeps them alive past the 2‑minute video limit. Tuning knobs are listed in `.env.example`. The "frame received" demo announcement is off whenever a Gemini key is set.
+
+Tests (no key or network needed): `PYTHONPATH=. python -m pytest server/tests/test_wall_detector.py -q`
+
+---
+
 ## Protocol v1
 
 WebSocket paths:

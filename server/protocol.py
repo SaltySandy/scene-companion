@@ -58,6 +58,7 @@ class MsgType:
     MIC = "mic"
     SPEAKING = "speaking"
     TRANSCRIPT = "transcript"
+    WALL = "wall"  # laptop -> viewer: wall detector status
     ERROR = "error"
 
 

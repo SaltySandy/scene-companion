@@ -44,6 +44,11 @@
     .transcript { background: #f4f7fb; color: #111; border-radius: 8px; min-height: 96px; max-height: 180px; overflow: auto; padding: 8px; font-size: 0.95rem; }
     .transcript .partial { color: #6b7280; }
     .transcript .final { color: #111; font-weight: 650; }
+    .wall { font-size: 1.6rem; font-weight: 800; letter-spacing: 0.02em; padding: 10px 12px; border-radius: 8px; text-align: center; background: #222a35; color: var(--muted); }
+    .wall.clear { background: #12321f; color: var(--good); }
+    .wall.approaching { background: #3a2f0b; color: var(--accent); }
+    .wall.too_close { background: #4a1414; color: var(--bad); animation: pulse 0.6s ease-in-out infinite alternate; }
+    @keyframes pulse { from { opacity: 1; } to { opacity: 0.55; } }
   </style>
 </head>
 <body>
@@ -57,6 +62,13 @@
       <img id="frame" alt="Latest frame from the phone camera" hidden />
     </section>
     <aside>
+      <div class="card">
+        <h2>Wall detector (Gemini Live)</h2>
+        <div class="wall" id="wallLevel" role="status" aria-live="assertive">OFF</div>
+        <div class="stat"><span>Confidence</span><b id="wallConf">—</b></div>
+        <div class="stat"><span>Seen</span><b id="wallNote">—</b></div>
+        <div class="stat"><span>Session</span><b id="wallConn">—</b></div>
+      </div>
       <div class="card">
         <h2>Stream</h2>
         <div class="stat"><span>Phone</span><b id="phone">—</b></div>
@@ -143,6 +155,14 @@
         $("inter").textContent = obj.inter_ms + " ms";
         $("bytes").textContent = obj.bytes + " B";
         $("phone").textContent = obj.phone_connected ? "connected" : "offline";
+      } else if (obj.type === "wall") {
+        const labels = { clear: "CLEAR", approaching: "APPROACHING", too_close: "TOO CLOSE" };
+        const el = $("wallLevel");
+        el.className = "wall " + (obj.level || "");
+        el.textContent = obj.level ? labels[obj.level] : (obj.connected ? "WAITING" : "OFFLINE");
+        $("wallConf").textContent = obj.confidence == null ? "—" : Math.round(obj.confidence * 100) + "%";
+        $("wallNote").textContent = obj.note || "—";
+        $("wallConn").textContent = obj.error ? ("error: " + obj.error) : (obj.connected ? obj.model : "reconnecting…");
       } else if (obj.type === "say") {
         log("say" + (obj.urgent ? " (urgent)" : "") + ": " + obj.text);
       } else if (obj.type === "hello_ack") {
