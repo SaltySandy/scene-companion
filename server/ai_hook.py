@@ -73,6 +73,11 @@ _model_tried = False
 _cfg: Any = None
 _tracker: Any = None
 
+# "What is it" descriptions (server/ai/describe.py): background tasks on the event loop.
+_gate: Any = None
+_levels: dict[str, str] = {}  # latest held levels, read when a description comes back
+_tasks: set[asyncio.Task[None]] = set()
+
 
 def warmup() -> str | None:
     """Load the depth model (blocking; call via to_thread at startup). Returns its name."""
@@ -120,6 +125,7 @@ async def read_proximity(jpeg_bytes: bytes) -> ProximityReading:
     from server.ai.proximity import overall
 
     held = _tracker.update(result.levels)
+    _maybe_describe(jpeg_bytes, held)
     return ProximityReading(
         state="ok",
         level=overall(held),
@@ -128,6 +134,44 @@ async def read_proximity(jpeg_bytes: bytes) -> ProximityReading:
         sectors_m=result.sectors_m,
         model=_model.name,
     )
+
+
+def _maybe_describe(jpeg_bytes: bytes, held: dict[str, str]) -> None:
+    """Start a description task when a new obstacle appears. Never awaits it."""
+    global _gate, _levels
+    prev, _levels = _levels, dict(held)
+    try:
+        from server.ai import describe
+    except ImportError:
+        return
+    if not describe.available():
+        return
+    if _gate is None:
+        _gate = describe.DescribeGate()
+    sector = _gate.check(prev, held, describe.monotonic())
+    if sector:
+        task = asyncio.create_task(_describe_and_say(jpeg_bytes, sector, describe.monotonic()))
+        _tasks.add(task)
+        task.add_done_callback(_tasks.discard)
+
+
+async def _describe_and_say(jpeg_bytes: bytes, sector: str, started: float) -> None:
+    from server.ai import describe
+    from server.hub import say
+
+    try:
+        label = await describe.describe(jpeg_bytes, sector)
+    finally:
+        _gate.done()
+    if not label:
+        return
+    if describe.monotonic() - started > describe.MAX_AGE_S:
+        log.info("dropping late description %r", label)
+        return
+    if _levels.get(sector, "clear") == "clear":
+        log.info("dropping description %r: %s sector cleared", label, sector)
+        return
+    await say(f"{label} {describe.WHERE[sector]}", urgent=False)
 
 
 # ---------------------------------------------------------------------------
