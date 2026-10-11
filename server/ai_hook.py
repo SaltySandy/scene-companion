@@ -73,6 +73,9 @@ _model_tried = False
 _cfg: Any = None
 _tracker: Any = None
 
+# Last depth + analysis. Pointer store only; the viewer render reads it later.
+_debug: tuple[Any, Any, Any, str | None] | None = None  # depth, result, cfg, model name
+
 # "What is it" descriptions (server/ai/describe.py): background tasks on the event loop.
 _gate: Any = None
 _levels: dict[str, str] = {}  # latest held levels, read when a description comes back
@@ -105,7 +108,67 @@ def _infer(jpeg_bytes: bytes) -> Any:
     """Runs in a worker thread: bytes in, plain data out."""
     from server.ai.proximity import analyze
 
-    return analyze(_model.predict(jpeg_bytes), _cfg)
+    depth = _model.predict(jpeg_bytes)
+    result = analyze(depth, _cfg)
+    global _debug
+    _debug = (depth, result, _cfg, getattr(_model, "name", None))
+    return result
+
+
+def fov_params() -> dict[str, Any]:
+    """The ROI / model size the running sensor is actually using. Safe anytime."""
+    from server.ai.proximity import ProximityConfig
+
+    cfg = _cfg or ProximityConfig.from_env()
+    params: dict[str, Any] = {
+        "roi_top": cfg.roi_top,
+        "roi_bottom": cfg.roi_bottom,
+        "percentile": cfg.percentile,
+        "near_m": cfg.near_m,
+        "danger_m": cfg.danger_m,
+        "depth_height": getattr(_model, "height", None),
+        "depth_width": getattr(_model, "width", None),
+        "model": getattr(_model, "name", None),
+        "mount_rotation": "phone",
+        "mount_note": "Phone applies mount_rotation before JPEG encode; frames arrive upright.",
+        "proximity_on": PROXIMITY_ON,
+        "describe": _describe_status(),
+    }
+    if _debug is not None:
+        _depth, result, _used_cfg, name = _debug
+        params["sectors_m"] = dict(result.sectors_m)
+        params["levels"] = dict(result.levels)
+        params["level"] = result.level
+        params["depth_height"] = int(_depth.shape[0])
+        params["depth_width"] = int(_depth.shape[1])
+        if name:
+            params["model"] = name
+    return params
+
+
+def render_fov_jpeg() -> tuple[bytes, dict[str, Any]] | None:
+    """Build the FoV JPEG from the last stashed depth. Blocking; call via to_thread."""
+    snap = _debug
+    if snap is None:
+        return None
+    depth, result, cfg, name = snap
+    from server.ai.fov import render_fov
+
+    return render_fov(depth, result, cfg, model_name=name)
+
+
+def _describe_status() -> str:
+    try:
+        from server.ai import describe
+    except ImportError:
+        return "unavailable"
+    if not describe.ENABLED:
+        return "off (SAW_DESCRIBE=0)"
+    if describe._disabled_reason:
+        return f"disabled ({describe._disabled_reason})"
+    if not (os.environ.get("ANTHROPIC_API_KEY") or "").strip():
+        return "idle (no ANTHROPIC_API_KEY; first obstacle will disable it)"
+    return "on"
 
 
 async def read_proximity(jpeg_bytes: bytes) -> ProximityReading:

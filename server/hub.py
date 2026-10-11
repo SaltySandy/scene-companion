@@ -30,6 +30,9 @@ CLOCK_EVERY_SEC = 2.0
 # telling the walker "clear" about where they were 1 s ago is worse than silence.
 STALE_MS = int(os.environ.get("SAW_STALE_MS") or 700)
 
+# Viewer FoV JPEG. Off the proximity hot path: only when someone is watching.
+FOV_EVERY_SEC = float(os.environ.get("SAW_FOV_EVERY_SEC") or "0.25")
+
 
 @dataclass(frozen=True)
 class PendingFrame:
@@ -57,6 +60,14 @@ class Hub:
     clock_task: asyncio.Task[None] | None = None
     proximity_seq: int = 0
     last_cue_latency_ms: int | None = None  # camera to cue start, phone clock
+    last_jpeg: bytes | None = None  # latest phone JPEG; not consumed by take_latest()
+    last_jpeg_ts: int | None = None
+    last_recv_ts: int | None = None
+    last_fov_jpeg: bytes | None = None
+    last_fov_meta: dict[str, Any] | None = None
+    fov_seq: int = 0
+    fov_task: asyncio.Task[None] | None = None
+    phone_config: dict[str, Any] = field(default_factory=dict)
 
     async def attach_phone(self, ws: WebSocket) -> None:
         if self.phone is not None:
@@ -77,9 +88,12 @@ class Hub:
 
     def attach_viewer(self, ws: WebSocket) -> None:
         self.viewers.add(ws)
+        log.info("viewer connected (%d watching)", len(self.viewers))
 
     def detach_viewer(self, ws: WebSocket) -> None:
-        self.viewers.discard(ws)
+        if ws in self.viewers:
+            self.viewers.discard(ws)
+            log.info("viewer disconnected (%d watching)", len(self.viewers))
 
     def submit_frame(self, jpeg: bytes, capture_ts: int, recv_ts: int | None = None) -> None:
         """Keep only the latest JPEG. The worker never queues a backlog.
@@ -89,6 +103,9 @@ class Hub:
         """
         if recv_ts is None:
             recv_ts = proto.now_ms()
+        self.last_jpeg = jpeg
+        self.last_jpeg_ts = capture_ts
+        self.last_recv_ts = recv_ts
         if self.latest_frame is not None:
             self.frames_dropped += 1
             self._drops_since_take += 1
@@ -197,6 +214,57 @@ class Hub:
                 dead.append(ws)
         for ws in dead:
             self.detach_viewer(ws)
+
+    async def send_snapshot_to_viewer(self, ws: WebSocket) -> None:
+        """Catch a late viewer up: last JPEG, last FoV meta. Failures drop that socket."""
+        try:
+            if self.last_jpeg is not None:
+                ts = self.last_jpeg_ts if self.last_jpeg_ts is not None else 0
+                recv = self.last_recv_ts if self.last_recv_ts is not None else proto.now_ms()
+                await ws.send_bytes(proto.encode_binary(proto.Kind.JPEG_FRAME, self.last_jpeg, timestamp_ms=ts))
+                await ws.send_text(self._stats_json(ts, recv, len(self.last_jpeg)))
+            from server.ai_hook import fov_params
+
+            meta = dict(self.last_fov_meta or fov_params())
+            meta["seq"] = self.fov_seq
+            if self.phone_config:
+                meta["phone"] = self.phone_config
+            await ws.send_text(proto.encode_json(proto.MsgType.FOV, **meta))
+        except Exception as exc:
+            log.warning("viewer snapshot send failed: %s", exc)
+            self.detach_viewer(ws)
+
+    async def fov_loop(self) -> None:
+        """Render the FoV JPEG only while someone is watching. Never on the infer thread."""
+        from server.ai_hook import fov_params, render_fov_jpeg
+
+        while True:
+            await asyncio.sleep(max(0.1, FOV_EVERY_SEC))
+            if not self.viewers:
+                continue
+            try:
+                packed = await asyncio.to_thread(render_fov_jpeg)
+            except asyncio.CancelledError:
+                raise
+            except ImportError as exc:
+                log.warning("fov render unavailable: %s", exc)
+                await asyncio.sleep(5)
+                continue
+            except Exception:
+                log.exception("fov render failed")
+                continue
+            self.fov_seq += 1
+            if packed is None:
+                meta = fov_params()
+            else:
+                jpeg, meta = packed
+                self.last_fov_jpeg = jpeg
+                meta = {**fov_params(), **meta}
+            meta["seq"] = self.fov_seq
+            if self.phone_config:
+                meta["phone"] = self.phone_config
+            self.last_fov_meta = meta
+            await self._broadcast_viewers_text(proto.encode_json(proto.MsgType.FOV, **meta))
 
     def _stats_json(self, capture_ts: int, recv_ms: int, nbytes: int) -> str:
         import time
@@ -340,6 +408,8 @@ class Hub:
             self.worker_task = asyncio.create_task(self.worker_loop(), name="saw-ai-worker")
         if self.clock_task is None or self.clock_task.done():
             self.clock_task = asyncio.create_task(self.clock_loop(), name="saw-clock")
+        if self.fov_task is None or self.fov_task.done():
+            self.fov_task = asyncio.create_task(self.fov_loop(), name="saw-fov")
 
 
 def _flatten(response: Response) -> list:

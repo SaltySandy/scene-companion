@@ -59,6 +59,7 @@ class MsgType:
     ERROR = "error"
     PROXIMITY = "proximity"
     ACK = "ack"  # phone -> laptop: {frame_key, cue_start_ts (phone clock), state}
+    FOV = "fov"  # laptop -> viewer only: effective depth band the sensor used
 
 
 # Proximity heartbeat (laptop -> phone and viewers). state "unknown" means the
