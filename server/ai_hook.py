@@ -273,33 +273,24 @@ def _demo_announce() -> Say | None:
     return None
 
 
-def _nav_say(jpeg_bytes: bytes) -> Say | None:
-    """Optional navigation stage. Off unless SAW_NAV=1 so proximity stays the live default."""
-    if (os.environ.get("SAW_NAV") or "0").strip() in {"0", "", "false", "off"}:
-        return None
-    try:
-        from server.nav import analyze
-    except ImportError:
-        return None
-    result = analyze(jpeg_bytes)
-    text = (result.utterance or "").strip()
-    if not text:
-        return None
-    return Say(text, urgent=bool(result.should_stop))
-
-
 async def on_frame(jpeg_bytes: bytes, ts: int) -> Response:
     """Called with the latest JPEG. ``ts`` is the phone capture time (epoch ms, phone clock)."""
     del ts
     out: list[Say | Play | ProximityReading] = []
+    reading: ProximityReading | None = None
     if PROXIMITY_ON:
-        out.append(await read_proximity(jpeg_bytes))
+        reading = await read_proximity(jpeg_bytes)
+        out.append(reading)
     announce = _demo_announce()
     if announce:
         out.append(announce)
-    nav = _nav_say(jpeg_bytes)
-    if nav:
-        out.append(nav)
+    # Nav is latest-frame / drop-don't-queue in server.nav_live — never on this await.
+    try:
+        from server.nav_live import note_frame
+
+        note_frame(jpeg_bytes, reading)
+    except Exception:
+        log.debug("nav_live skipped", exc_info=True)
     return out or None
 
 

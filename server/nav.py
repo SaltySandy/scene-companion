@@ -1,9 +1,8 @@
 """Pluggable navigation stage for exit-finding and spoken guidance.
 
-The live hook and the replay harness both call ``analyze(frame)``. Drop a real
-detector or planner in by registering a ``Navigator`` — the scorecard will
-pick it up. The default ``baseline`` is a color-heuristic stub so scoring
-runs today with no extra model.
+The live hook and the replay harness both call ``analyze(frame)``. The default
+navigator is ``exit`` (``server/nav_exit.py``). ``baseline`` stays registered
+for scorecard comparisons.
 """
 
 from __future__ import annotations
@@ -54,6 +53,9 @@ class NavResult:
     utterance: str = ""
     obstacle_ahead: bool = False
     nearest_obstacle_distance: Distance = "none"
+    heading: Bearing = "none"
+    boxes: list = field(default_factory=list)
+    latency_ms: float | None = None
 
     def payload(self) -> dict:
         return {
@@ -69,6 +71,9 @@ class NavResult:
             "utterance": self.utterance,
             "obstacle_ahead": self.obstacle_ahead,
             "nearest_obstacle_distance": self.nearest_obstacle_distance,
+            "heading": self.heading,
+            "boxes": list(self.boxes),
+            "latency_ms": self.latency_ms,
         }
 
 
@@ -87,8 +92,14 @@ def register(name: str, factory: Callable[[], Navigator]) -> None:
     NAVIGATORS[name] = factory
 
 
+def _ensure_plugins() -> None:
+    if "exit" not in NAVIGATORS:
+        from server import nav_exit as _nav_exit  # noqa: F401
+
+
 def get_navigator(name: str | None = None) -> Navigator:
-    key = (name or os.environ.get("SAW_NAVIGATOR") or "baseline").strip()
+    _ensure_plugins()
+    key = (name or os.environ.get("SAW_NAVIGATOR") or "exit").strip()
     if key not in NAVIGATORS:
         raise KeyError(f"unknown navigator {key!r}; have {sorted(NAVIGATORS)}")
     return NAVIGATORS[key]()
@@ -99,7 +110,10 @@ _default: Navigator | None = None
 
 def default_navigator(name: str | None = None) -> Navigator:
     global _default
-    want = (name or os.environ.get("SAW_NAVIGATOR") or "baseline").strip()
+    _ensure_plugins()
+    if name is None and _default is not None:
+        return _default
+    want = (name or os.environ.get("SAW_NAVIGATOR") or "exit").strip()
     if _default is None or getattr(_default, "name", None) != want:
         _default = get_navigator(want)
     return _default
@@ -114,13 +128,24 @@ def reset_navigator() -> None:
 def analyze(frame: bytes) -> NavResult:
     """Entry point: ``analyze(frame) -> NavResult``.
 
-    Detection and path planning replace ``BaselineNavigator`` (or register a
-    new name and set ``SAW_NAVIGATOR``).
+    The live default is ``exit`` (``server/nav_exit.py``). ``baseline`` stays
+    registered for scorecard comparisons (``SAW_NAVIGATOR=baseline``).
     """
     return default_navigator().analyze(frame)
 
 
+_enabled_override: bool | None = None
+
+
+def set_nav_enabled(on: bool | None) -> None:
+    """Runtime toggle. ``None`` clears the override and falls back to SAW_NAV."""
+    global _enabled_override
+    _enabled_override = on
+
+
 def nav_enabled() -> bool:
+    if _enabled_override is not None:
+        return _enabled_override
     return (os.environ.get("SAW_NAV") or "0").strip() not in {"0", "", "false", "off"}
 
 

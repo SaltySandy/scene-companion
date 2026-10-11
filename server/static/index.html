@@ -102,6 +102,16 @@
         <div class="stat"><span>Frame age at send</span><b id="proxAge">—</b></div>
       </div>
       <div class="card">
+        <h2>Exit nav</h2>
+        <div class="prox lost" id="navState" role="status">OFF</div>
+        <div class="stat"><span>Exit</span><b id="navExit">—</b></div>
+        <div class="stat"><span>Heading</span><b id="navHead">—</b></div>
+        <div class="stat"><span>Analyze</span><b id="navMs">—</b></div>
+        <div class="row">
+          <label class="chk"><input type="checkbox" id="navBox" /> speak guidance</label>
+        </div>
+      </div>
+      <div class="card">
         <h2>Detector FoV</h2>
         <div class="stat"><span>Depth input</span><b id="fovSize">—</b></div>
         <div class="stat"><span>ROI band</span><b id="fovRoi">—</b></div>
@@ -186,6 +196,7 @@
     let lastHttpTs = "";
     let lastFovSeq = -1;
     let fovMeta = null;
+    let navMeta = null;
     let ws = null;
     let reconnectTimer = null;
 
@@ -261,6 +272,32 @@
       ctx.moveTo((canvas.width * 2) / 3, y0);
       ctx.lineTo((canvas.width * 2) / 3, y1);
       ctx.stroke();
+      drawNav(ctx, canvas.width, canvas.height);
+    }
+
+    function drawNav(ctx, w, h) {
+      if (!navMeta || !navMeta.enabled || !navMeta.boxes) return;
+      for (const b of navMeta.boxes) {
+        if (b.label === "heading") continue;
+        const color = b.label === "exit" ? "#f5c542" : (b.label === "door" ? "#93a0b3" : "#ff6b6b");
+        ctx.strokeStyle = color;
+        ctx.lineWidth = Math.max(2, w / 180);
+        ctx.strokeRect(b.x0 * w, b.y0 * h, (b.x1 - b.x0) * w, (b.y1 - b.y0) * h);
+        ctx.fillStyle = color;
+        ctx.font = Math.max(12, w / 42) + "px ui-sans-serif";
+        ctx.fillText(b.label || "", b.x0 * w + 4, Math.max(14, b.y0 * h - 4));
+      }
+      const head = navMeta.heading;
+      if (head && head !== "none") {
+        const x = head === "left" ? w * 0.18 : (head === "right" ? w * 0.82 : w * 0.5);
+        ctx.fillStyle = "#3dd68c";
+        ctx.beginPath();
+        ctx.moveTo(x, h * 0.78);
+        ctx.lineTo(x - 14, h * 0.88);
+        ctx.lineTo(x + 14, h * 0.88);
+        ctx.closePath();
+        ctx.fill();
+      }
     }
     $("frame").addEventListener("load", drawRoi);
 
@@ -458,10 +495,56 @@
     };
     $("overlayBox").onchange = () => $("feeds").classList.toggle("overlay", $("overlayBox").checked);
 
+    function applyNav(n) {
+      if (!n) return;
+      navMeta = n;
+      $("navBox").checked = !!n.enabled;
+      const el = $("navState");
+      if (!n.enabled) {
+        el.className = "prox lost";
+        el.textContent = "OFF";
+      } else if (n.arrived) {
+        el.className = "prox clear";
+        el.textContent = "ARRIVED";
+      } else if (n.should_stop) {
+        el.className = "prox danger";
+        el.textContent = "STOP";
+      } else {
+        el.className = "prox near";
+        el.textContent = (n.exit_visible || "no").toUpperCase();
+      }
+      const vis = n.exit_visible || "no";
+      const bear = n.exit_bearing || "none";
+      $("navExit").textContent = vis === "no" ? vis : (vis + " · " + bear);
+      $("navHead").textContent = n.heading || "—";
+      $("navMs").textContent = (typeof n.latency_ms === "number") ? (n.latency_ms.toFixed(0) + " ms") : "—";
+      drawRoi();
+    }
+    async function pollNav() {
+      try {
+        const r = await fetch("/nav", { cache: "no-store" });
+        if (r.ok) applyNav(await r.json());
+      } catch (err) {
+        log("nav poll failed: " + err);
+      }
+    }
+    $("navBox").onchange = async () => {
+      const r = await fetch("/nav", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ enabled: $("navBox").checked }),
+      });
+      const j = await r.json();
+      applyNav(j);
+      log(j.enabled ? "nav on" : "nav off");
+    };
+
     pollLatest();
     pollFov();
+    pollNav();
     setInterval(pollLatest, 250);
     setInterval(pollFov, 500);
+    setInterval(pollNav, 250);
     connectViewer();
   </script>
 </body>
