@@ -25,7 +25,18 @@ SAW **v1**: binary envelope `SAW1 | kind | flags | reserved | ts_ms | len | payl
 
 ## What was verified live vs not
 
-Filled in after the VM build and fake-client run (see the end of this file after CI-style checks).
+**Verified in this VM**
+
+- Python protocol unit tests: **14 passed** (`server/tests/test_protocol.py` + in-process fake client + `POST /say`).
+- Android protocol unit tests: **10 passed** (`ProtocolTest`).
+- Debug APK **built** with Gradle 8.13 / AGP 8.9.1 / compileSdk 36: `android/app/build/outputs/apk/debug/app-debug.apk` (8.3 MB), copied to `/opt/cursor/artifacts/app-debug.apk`.
+- Laptop server running on `0.0.0.0:8765`. LAN IP printed as `172.30.0.2`.
+- Scripted fake phone against the live server: `hello_ack`, 16 JPEGs sent, demo stub returned `say` (“frame received, N per second”). `curl -X POST /say` returned 200.
+
+**Not verified**
+
+- No Android emulator run. `/dev/kvm` exists, but the emulator package and system images were not installed (large download). No physical phone in this VM, so CameraX, TalkBack, TTS, haptics, and the foreground service were not exercised on a device.
+- No vision API call (by design; no key required to run).
 
 ## Latency (expected)
 
