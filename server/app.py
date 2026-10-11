@@ -3,12 +3,14 @@
 from __future__ import annotations
 
 import asyncio
+import json
 import logging
 import os
 import socket
 import sys
 from contextlib import asynccontextmanager
 from pathlib import Path
+from typing import Any
 
 import sentry_sdk
 from fastapi import FastAPI, Request, WebSocket, WebSocketDisconnect
@@ -66,6 +68,14 @@ def init_sentry() -> None:
 
 
 init_sentry()
+
+
+async def read_json(request: Request) -> tuple[Any, JSONResponse | None]:
+    """Parse a JSON body. Malformed input is a 400, not a 500 traceback."""
+    try:
+        return await request.json(), None
+    except (json.JSONDecodeError, UnicodeDecodeError):
+        return None, JSONResponse({"ok": False, "error": "invalid JSON"}, status_code=400)
 
 
 def lan_ip() -> str:
@@ -161,7 +171,9 @@ async def http_say(request: Request) -> JSONResponse:
     urgent = False
     text = ""
     if "application/json" in content_type:
-        body = await request.json()
+        body, err = await read_json(request)
+        if err is not None:
+            return err
         if isinstance(body, dict):
             text = str(body.get("text") or body.get("message") or "")
             urgent = bool(body.get("urgent", False))
@@ -180,7 +192,9 @@ async def http_say(request: Request) -> JSONResponse:
 async def http_recall(request: Request) -> JSONResponse:
     body: dict = {}
     if "application/json" in request.headers.get("content-type", ""):
-        raw = await request.json()
+        raw, err = await read_json(request)
+        if err is not None:
+            return err
         if isinstance(raw, dict):
             body = raw
     question = str(body.get("question") or body.get("text") or "").strip()
@@ -307,6 +321,8 @@ async def _handle_phone_text(_ws: WebSocket, text: str) -> None:
         log.info("phone config: %s", obj)
     elif kind == proto.MsgType.SPEAKING:
         transcriber.set_phone_speaking(bool(obj.get("active", False)))
+    elif kind in (proto.MsgType.TTS_START, proto.MsgType.AUDIO_EVENT):
+        await hub.note_phone_audio(obj)
 
 
 async def _ws_safe_send_text(ws: WebSocket, text: str) -> None:
@@ -349,9 +365,13 @@ async def debug_proximity(request: Request) -> JSONResponse:
     {left, center, right} and "sectors_m". Real heartbeats keep flowing if the
     model is running, so test with the depth model off (SAW_PROXIMITY=0).
     """
-    body = await request.json() if "application/json" in request.headers.get("content-type", "") else {}
-    if not isinstance(body, dict):
-        body = {}
+    body: dict = {}
+    if "application/json" in request.headers.get("content-type", ""):
+        raw, err = await read_json(request)
+        if err is not None:
+            return err
+        if isinstance(raw, dict):
+            body = raw
     state = str(body.get("state") or request.query_params.get("state") or proto.PROXIMITY_OK)
     level = body.get("level") or request.query_params.get("level")
     levels = body.get("levels")
@@ -362,6 +382,12 @@ async def debug_proximity(request: Request) -> JSONResponse:
     except ValueError as exc:
         return JSONResponse({"ok": False, "error": str(exc)}, status_code=400)
     return JSONResponse({"ok": True, "seq": hub.proximity_seq, "state": state, "level": level})
+
+
+@app.get("/audio_log")
+async def audio_log() -> JSONResponse:
+    """Recent say / tts_start / audio_event records. Phone confirmation that TTS ran."""
+    return JSONResponse({"ok": True, "events": list(hub.audio_events)})
 
 
 @app.get("/debug/sentry")

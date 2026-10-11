@@ -67,12 +67,25 @@ def test_unknown_kind() -> None:
 
 
 def test_json_roundtrip() -> None:
-    text = proto.encode_json(proto.MsgType.SAY, text="door on the left", urgent=True)
+    text = proto.encode_json(proto.MsgType.SAY, text="door on the left", urgent=True, id="say-1")
     obj = proto.decode_json(text)
     assert obj["v"] == 1
     assert obj["type"] == "say"
     assert obj["text"] == "door on the left"
     assert obj["urgent"] is True
+    assert obj["id"] == "say-1"
+
+
+def test_tts_start_and_audio_event() -> None:
+    start = proto.decode_json(
+        proto.encode_json(proto.MsgType.TTS_START, id="say-1", text="hi", tts_start_ts=9)
+    )
+    assert start["type"] == proto.MsgType.TTS_START
+    done = proto.decode_json(
+        proto.encode_json(proto.MsgType.AUDIO_EVENT, id="say-1", event="ended", text="hi")
+    )
+    assert done["type"] == proto.MsgType.AUDIO_EVENT
+    assert done["event"] == "ended"
 
 
 def test_json_rejects_wrong_version() -> None:

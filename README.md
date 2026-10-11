@@ -161,6 +161,8 @@ Every text message is `{"v":1,"type":"..."}`.
 
 Phone → laptop: `hello`, `config` (`width`, `height`, `fps`, `quality`, `mic`), `ping`,
 `speaking`,
+`tts_start` `{"id":"say-1","text":"...","tts_start_ts":<phone epoch ms>}` (optional `capture_ts`),
+`audio_event` `{"id":"say-1","event":"received|playing|ended|error"}`,
 `pong` `{"t0":<echoed>,"tp":<phone epoch ms>}` (answer to a laptop clock ping),
 `ack` `{"frame_key":<capture_ts>,"cue_start_ts":<phone epoch ms>,"state":"clear|near|danger|lost"}`
 (sent once per frame, after the first audio chunk driven by that frame's heartbeat is written).
@@ -171,7 +173,7 @@ Phone → laptop: `hello`, `config` (`width`, `height`, `fps`, `quality`, `mic`)
 Laptop → phone:
 
 - `hello_ack`
-- `say` — `{"v":1,"type":"say","text":"...","urgent":false}` (Android TTS; lowest latency, works offline)
+- `say` — `{"v":1,"type":"say","text":"...","urgent":false,"id":"say-1"}` (Android TTS; lowest latency, works offline)
 - `pong`
 - `ping` `{"t0":<laptop epoch ms>}` — clock sync; the phone answers `pong` with `t0` and its own
   clock `tp` right away. Sent 5× at connect, then every 2 s. Clients must ignore types they don't know.
@@ -193,6 +195,7 @@ HTTP helpers (same laptop):
 - `POST /play` raw audio body, `Content-Type` = mime
 - `POST /debug/proximity` `{"level":"danger"}` or `{"state":"unknown"}` — inject one proximity
   message to test the phone's cues without the depth model
+- `GET /audio_log` — recent `say` / `tts_start` / `audio_event` records (phone confirmed speech)
 - `GET /health`, `GET /`
 
 ---
@@ -206,15 +209,28 @@ HTTP helpers (same laptop):
 - Mic format is 16 kHz mono PCM16, sent in 100 ms chunks. `AudioRecord` uses `VOICE_COMMUNICATION`, and `AcousticEchoCanceler` is enabled when the device has it. While TTS or a clip is playing, the phone sends `speaking` and the server ignores the mic.
 - Server address is persisted.
 
-Build the debug APK (needs Android SDK):
+Build the debug APK (needs Android SDK). **Use the shared team debug keystore** so
+`adb install -r` works over the APK already on Alessandro's Pixel. The key is a
+secret (upload or `SAW_DEBUG_KEYSTORE_B64`); never commit it.
 
 ```bash
 export ANDROID_HOME="$HOME/android-sdk"   # or your SDK path
 echo "sdk.dir=$ANDROID_HOME" > android/local.properties
+# decode a .b64 upload or SAW_DEBUG_KEYSTORE_B64 (prints only the output path)
+./scripts/decode_debug_keystore.sh path/to/saw-debug-keystore.b64
+export SAW_DEBUG_KEYSTORE="$PWD/android/.secrets/saw-debug.keystore"
 cd android && ./gradlew :app:assembleDebug
 ```
 
-The APK lands at `android/app/build/outputs/apk/debug/app-debug.apk`.
+Windows laptop (keystore already at `C:\Users\ihate\saw-debug.keystore`):
+
+```powershell
+$env:SAW_DEBUG_KEYSTORE = "C:\Users\ihate\saw-debug.keystore"
+cd android; .\gradlew :app:assembleDebug
+```
+
+If that file / env var is missing, Gradle uses the default debug key. The APK
+lands at `android/app/build/outputs/apk/debug/app-debug.apk`.
 
 ---
 

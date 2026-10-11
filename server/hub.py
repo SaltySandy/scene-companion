@@ -33,6 +33,9 @@ STALE_MS = int(os.environ.get("SAW_STALE_MS") or 700)
 # Viewer FoV JPEG. Off the proximity hot path: only when someone is watching.
 FOV_EVERY_SEC = float(os.environ.get("SAW_FOV_EVERY_SEC") or "0.25")
 
+# Phone TTS confirmations. Drop oldest; never grow without bound.
+AUDIO_LOG_MAX = 100
+
 
 @dataclass(frozen=True)
 class PendingFrame:
@@ -68,6 +71,8 @@ class Hub:
     fov_seq: int = 0
     fov_task: asyncio.Task[None] | None = None
     phone_config: dict[str, Any] = field(default_factory=dict)
+    say_seq: int = 0
+    audio_events: list[dict[str, Any]] = field(default_factory=list)
 
     async def attach_phone(self, ws: WebSocket) -> None:
         if self.phone is not None:
@@ -123,20 +128,51 @@ class Hub:
         self._drops_since_take = 0
         return PendingFrame(jpeg, capture_ts, recv_ts, dropped)
 
+    def note_audio(self, entry: dict[str, Any]) -> None:
+        """Record a say / tts_start / audio_event. Drops the oldest past AUDIO_LOG_MAX."""
+        rec = dict(entry)
+        rec.setdefault("ts", proto.now_ms())
+        self.audio_events.append(rec)
+        overflow = len(self.audio_events) - AUDIO_LOG_MAX
+        if overflow > 0:
+            del self.audio_events[:overflow]
+
+    async def note_phone_audio(self, obj: dict[str, Any]) -> None:
+        """Phone confirmed TTS start/progress. Log, keep, and show on the viewer."""
+        kind = str(obj.get("type") or "")
+        event = obj.get("event")
+        if kind == proto.MsgType.TTS_START:
+            event = event or "playing"
+        entry = {
+            "type": kind,
+            "id": obj.get("id"),
+            "event": event,
+            "text": obj.get("text"),
+            "capture_ts": obj.get("capture_ts"),
+            "tts_start_ts": obj.get("tts_start_ts"),
+        }
+        self.note_audio(entry)
+        log.info("phone %s id=%s event=%s text=%s", kind, entry.get("id"), event, entry.get("text"))
+        await self._broadcast_viewers_text(proto.encode_json(kind, **{k: v for k, v in entry.items() if k != "type"}))
+
     async def say(self, text: str, urgent: bool = False) -> None:
         if not text or not str(text).strip():
             return
-        msg = proto.encode_json(proto.MsgType.SAY, text=str(text).strip(), urgent=bool(urgent))
+        self.say_seq += 1
+        say_id = f"say-{self.say_seq}"
+        clean = str(text).strip()
+        msg = proto.encode_json(proto.MsgType.SAY, text=clean, urgent=bool(urgent), id=say_id)
         await self._send_phone_text(msg)
         await self._broadcast_viewers_text(
-            proto.encode_json(proto.MsgType.SAY, text=str(text).strip(), urgent=bool(urgent))
+            proto.encode_json(proto.MsgType.SAY, text=clean, urgent=bool(urgent), id=say_id)
         )
-        log.info("say urgent=%s: %s", urgent, text)
-        sinks.log_event("say", str(text).strip(), meta={"urgent": bool(urgent)})
+        self.note_audio({"type": proto.MsgType.SAY, "id": say_id, "event": "sent", "text": clean, "urgent": bool(urgent)})
+        log.info("say id=%s urgent=%s: %s", say_id, urgent, clean)
+        sinks.log_event("say", clean, meta={"urgent": bool(urgent), "id": say_id})
         try:
             from server.transcribe import transcriber
 
-            transcriber.note_say(str(text).strip())
+            transcriber.note_say(clean)
         except Exception:
             log.debug("speech mute failed", exc_info=True)
 

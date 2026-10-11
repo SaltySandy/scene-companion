@@ -103,6 +103,41 @@ class StreamClient(
         )
     }
 
+    fun sendTtsEvent(event: String, text: String, audioId: String?) {
+        if (!connected) return
+        val ws = socketRef.get() ?: return
+        try {
+            if (event == "playing") {
+                ws.send(
+                    Protocol.encodeJson(
+                        Protocol.TYPE_TTS_START,
+                        mapOf(
+                            "id" to audioId,
+                            "text" to text,
+                            "tts_start_ts" to Protocol.nowMs(),
+                        ),
+                    ),
+                )
+            }
+            sendAudioEvent(audioId, event, text)
+        } catch (_: Exception) {
+        }
+    }
+
+    private fun sendAudioEvent(audioId: String?, event: String, text: String) {
+        val ws = socketRef.get() ?: return
+        if (!connected) return
+        try {
+            ws.send(
+                Protocol.encodeJson(
+                    Protocol.TYPE_AUDIO_EVENT,
+                    mapOf("id" to audioId, "event" to event, "text" to text),
+                ),
+            )
+        } catch (_: Exception) {
+        }
+    }
+
     fun sendMicPcm(pcm: ByteArray, timestampMs: Long): Boolean {
         val ws = socketRef.get() ?: return false
         if (!connected) return false
@@ -193,7 +228,9 @@ class StreamClient(
             Protocol.TYPE_SAY -> {
                 val spoken = obj.optString("text")
                 val urgent = obj.optBoolean("urgent", false)
-                speech.enqueueSay(spoken, urgent)
+                val audioId = obj.optString("id").takeIf { it.isNotEmpty() }
+                if (audioId != null) sendAudioEvent(audioId, "received", spoken)
+                speech.enqueueSay(spoken, urgent, audioId)
             }
             Protocol.TYPE_STATUS -> {
                 if (obj.optString("msg") == "audio") {
