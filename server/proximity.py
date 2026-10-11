@@ -123,19 +123,36 @@ class CorridorLoomingEstimator:
         x1 = int(w * (0.5 + self.corridor_frac / 2.0))
         x0 = max(0, min(x0, w - 1))
         x1 = max(x0 + 1, min(x1, w))
-        y0 = int(h * 0.15)
-        corridor = arr[y0:, x0:x1]
+        # Mid-height walking path: skip sky and the near-ground band.
+        y0 = int(h * 0.18)
+        y1 = int(h * 0.78)
+        corridor = arr[y0:y1, x0:x1]
         if corridor.size == 0:
             return None
 
-        # Obstacle-like: darker than the corridor median, or a strong edge.
-        med = float(np.median(corridor))
-        dark = corridor < (med - 18.0)
-        # Simple horizontal gradient as a texture/edge cue (wall vs empty sky).
+        # Bright reference: sky / far field. When an object fills the sensor
+        # the top strip is dark too — treat that as "already in your face".
+        top = arr[: max(2, h // 6)]
+        p80 = float(np.percentile(arr, 80))
+        p20 = float(np.percentile(arr, 20))
+        global_mean = float(arr.mean())
+        filled_frame = global_mean < 95.0 and (p80 - p20) < 40.0
+        bg = max(p80, float(np.median(top)))
+        if filled_frame:
+            bg = max(bg, 180.0)
         gx = np.abs(np.diff(corridor, axis=1, prepend=corridor[:, :1]))
-        edged = gx > 12.0
+        dark = corridor < (bg - 22.0)
+        edged = gx > 14.0
         occupied = dark | edged
         fill = float(occupied.mean())
+        corridor_mean = float(corridor.mean())
+        if corridor_mean < bg - 28.0:
+            # Uniformly dark path: wall or object in your face.
+            fill = max(fill, min(0.98, (bg - corridor_mean) / max(bg, 1.0)))
+            occupied = occupied | (corridor < (bg - 16.0))
+        if filled_frame:
+            fill = max(fill, 0.92)
+            occupied = np.ones_like(occupied)
         if fill < FILL_MIN:
             return None
 
@@ -164,7 +181,7 @@ class CorridorLoomingEstimator:
             confidence=confidence,
             fill=fill,
             apparent_width_px=apparent,
-            details={"dist_blob": dist_blob, "dist_fill": dist_fill, "median": med, "w": w, "h": h},
+            details={"dist_blob": dist_blob, "dist_fill": dist_fill, "bg": bg, "w": w, "h": h},
         )
 
 
@@ -281,7 +298,11 @@ class ProximityEngine:
                 recent = [-(distance_m - s.distance_m) / max(t_s - s.t_s, 1e-3) for s in list(self.samples)[-3:]]
                 recent = [min(max(v, -1.0), MAX_CLOSING_MPS) for v in recent]
                 robust = float(np.median(recent + [instant]))
-                self.closing_mps = SPEED_EMA * robust + (1.0 - SPEED_EMA) * self.closing_mps
+                if len(self.samples) == 1:
+                    # First pair: take the measurement. EMA from 0 would lag a slam.
+                    self.closing_mps = robust
+                else:
+                    self.closing_mps = SPEED_EMA * robust + (1.0 - SPEED_EMA) * self.closing_mps
         self.samples.append(MotionSample(t_s=t_s, distance_m=distance_m))
         return self.closing_mps
 

@@ -60,7 +60,13 @@ def render_obstacle(
 
 
 def render_empty(width: int = 160, height: int = 120) -> bytes:
-    return render_obstacle(8.0, width, height, body=(188, 194, 202))
+    """Open corridor: sky + light ground, no obstacle blob."""
+    img = Image.new("RGB", (width, height), (190, 196, 205))
+    draw = ImageDraw.Draw(img)
+    draw.rectangle((0, int(height * 0.78), width, height), fill=(168, 166, 158))
+    buf = io.BytesIO()
+    img.save(buf, format="JPEG", quality=80)
+    return buf.getvalue()
 
 
 def render_white_flash(width: int = 160, height: int = 120) -> bytes:

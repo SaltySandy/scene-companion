@@ -41,6 +41,11 @@ async def _serve(port: int):
 async def _stop(server, task) -> None:
     server.should_exit = True
     await task
+    for worker in (hub.worker_task, hub.prox_task):
+        if worker is not None and not worker.done():
+            worker.cancel()
+    hub.worker_task = None
+    hub.prox_task = None
     hub.reset_for_tests()
     book.reset()
     engine.reset()

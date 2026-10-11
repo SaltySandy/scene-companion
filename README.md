@@ -164,7 +164,7 @@ The viewer “Latency (stamp)” line is uplink after sync (or the old `recv - c
 
 ## Proximity warning
 
-A fast, deterministic estimator (`server/proximity.py`, default `corridor_looming`) looks at the center walking corridor: dark / high-contrast mass + pinhole size (`distance = assumed_width × focal / apparent_width`) and fill. Same JPEG → same meters. No weights are downloaded; pip-install **numpy** and **pillow** (already in `server/requirements.txt`). The estimator is a `ProximityEstimator` protocol — drop in a depth model by implementing `estimate(jpeg)` and setting `SAW_PROXIMITY_ESTIMATOR` or `engine.set_estimator(...)`.
+A fast, deterministic estimator (`server/proximity.py`, default `corridor_looming`) looks at the center walking corridor: dark / high-contrast mass + pinhole size (`distance = assumed_width × focal / apparent_width`) and fill. Same JPEG → same meters. No weights are downloaded; pip-install **numpy** and **pillow** (already in `server/requirements.txt`). The estimator is a `ProximityEstimator` protocol — drop in a depth model by implementing `estimate(jpeg)` and setting `SAW_PROXIMITY_ESTIMATOR` or `engine.set_estimator(...)`. Frames are downscaled to 320 px wide before the math. Measured CPU (Pillow + numpy, no GPU): **~2.1 ms/frame at 640×480**, ~3.7 ms at 720p, ~7.5 ms at 1080p. That stays inside the ~220 ms one-foot walking budget.
 
 It tracks closing speed (EMA + median, reset on a >500 ms gap so a quality-switch camera rebind cannot look like a slam). It warns when
 

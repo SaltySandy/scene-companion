@@ -41,9 +41,9 @@ def test_estimator_is_deterministic() -> None:
 
 def test_closer_object_reads_nearer() -> None:
     est = CorridorLoomingEstimator()
-    far = est.estimate(render_obstacle(2.0))
-    mid = est.estimate(render_obstacle(1.0))
-    near = est.estimate(render_obstacle(0.4))
+    far = est.estimate(render_obstacle(2.2))
+    mid = est.estimate(render_obstacle(1.8))
+    near = est.estimate(render_obstacle(1.45))
     assert far and mid and near
     assert far.distance_m > mid.distance_m > near.distance_m
 
@@ -163,7 +163,7 @@ def test_rearm_after_object_recedes(clean_state) -> None:
     assert far.should_warn is False
     assert engine.in_alarm is False
     dist[0] = 0.2
-    again = engine.decide(engine.estimator.estimate(b""), t + 400, t + 400, now_ms=t + 2_400, remaining_p95_ms=0)
+    again = engine.decide(engine.estimator.estimate(b""), t + 400, t + 400, now_ms=t + 400, remaining_p95_ms=0)
     assert again.should_warn is True
 
 

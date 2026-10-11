@@ -308,8 +308,11 @@ class Hub:
 
     def ensure_worker(self) -> None:
         if self.worker_task is None or self.worker_task.done():
+            # Rebind so a new event loop (pytest-asyncio) does not inherit a dead Event.
+            self.frame_event = asyncio.Event()
             self.worker_task = asyncio.create_task(self.worker_loop(), name="saw-ai-worker")
         if self.prox_task is None or self.prox_task.done():
+            self.prox_event = asyncio.Event()
             self.prox_task = asyncio.create_task(self.prox_loop(), name="saw-prox-worker")
 
     def reset_for_tests(self) -> None:
@@ -320,6 +323,13 @@ class Hub:
         self.last_process_ctx = None
         self.phone = None
         self.viewers.clear()
+        self.worker_task = None
+        self.prox_task = None
+        try:
+            self.frame_event = asyncio.Event()
+            self.prox_event = asyncio.Event()
+        except RuntimeError:
+            pass
         prox_engine.reset()
         latency_book.reset()
 

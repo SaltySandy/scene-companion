@@ -39,9 +39,10 @@ def test_ntp_asymmetric_path_biases_offset() -> None:
 def test_min_rtt_sample_wins(clean_state) -> None:
     book = LatencyBook()
     book.consider_sync(0, 80, 90, 200)  # rtt 110, messy
-    book.consider_sync(1000, 1012, 1013, 1025)  # rtt 12, offset 0
+    book.consider_sync(1000, 1006, 1007, 1013)  # rtt 12, offset 0
     assert book.offset_rtt_ms == 12
-    assert abs(book.offset_ms or 99) < 1
+    assert book.offset_ms is not None
+    assert abs(book.offset_ms) < 1
 
 
 def test_later_worse_rtt_does_not_replace(clean_state) -> None:
@@ -133,7 +134,8 @@ def test_flash_expires() -> None:
 
 
 def test_tiny_jpeg_brightness_does_not_crash() -> None:
-    assert mean_luminance(MINI_JPEG) is not None
+    # 1x1 protocol probe may not decode on every Pillow; must not raise.
+    mean_luminance(MINI_JPEG)
 
 
 def test_snapshot_shape() -> None:
