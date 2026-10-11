@@ -47,7 +47,7 @@ Owners: A = data and lineage, B = AI/ML, C = Android and demo.
 | 3 | feat(tools): `scripts/session_report.py` (latency p50/p95, drops, capture_ts gaps) | A | done |
 | 3a | feat(lineage): ping/pong clock sync, `clock_offset_ms`/`clock_rtt_ms` in FrameRecord | A+C | done |
 | 4 | fix(android): fixed mount rotation; skip encoding while disconnected | C | done |
-| 5 | feat(tools): `scripts/prelabel.py` VLM pre-labeling | B | |
+| 5 | feat(tools): `scripts/prelabel.py` VLM pre-labeling | B | done |
 | 6 | feat(ai): `server/ai/depth.py` + `server/ai/proximity.py` (sectors, levels) | B | done |
 | 7 | feat(tools): `scripts/eval_proximity.py` offline eval, tune thresholds | A+B | |
 | 8 | feat(protocol): `proximity` message + `POST /debug/proximity` | C | |
