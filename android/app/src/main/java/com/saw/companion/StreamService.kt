@@ -64,6 +64,7 @@ class StreamService : LifecycleService() {
         })
         client = streamClient
         speech.onSpeakingChanged = { active -> streamClient.sendSpeaking(active) }
+        speech.onTtsEvent = { event, text, id -> streamClient.sendTtsEvent(event, text, id) }
         streamClient.start()
         camera = CameraStreamer(this, this, prefs, streamClient::readyToSend) { jpeg, ts ->
             streamClient.sendJpeg(jpeg, ts)

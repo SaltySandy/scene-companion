@@ -33,8 +33,14 @@ class SpeechQueue(context: Context) {
     /** True while TTS or a clip is playing, so the mic can be ignored. */
     var onSpeakingChanged: ((Boolean) -> Unit)? = null
 
+    /** TTS lifecycle: playing / ended / error. audioId is the server say id when present. */
+    var onTtsEvent: ((event: String, text: String, audioId: String?) -> Unit)? = null
+
+    private var currentText: String = ""
+    private var currentAudioId: String? = null
+
     private sealed class Item {
-        data class Speak(val text: String) : Item()
+        data class Speak(val text: String, val audioId: String? = null) : Item()
         data class Clip(val bytes: ByteArray, val flags: Int) : Item()
     }
 
@@ -46,16 +52,27 @@ class SpeechQueue(context: Context) {
                 tts?.language = Locale.getDefault()
                 tts?.setSpeechRate(1.05f)
                 tts?.setOnUtteranceProgressListener(object : UtteranceProgressListener() {
-                    override fun onStart(utteranceId: String?) = Unit
+                    override fun onStart(utteranceId: String?) {
+                        main.post { emitTts("playing") }
+                    }
                     override fun onDone(utteranceId: String?) {
-                        main.post { onItemFinished() }
+                        main.post {
+                            emitTts("ended")
+                            onItemFinished()
+                        }
                     }
                     @Deprecated("deprecated")
                     override fun onError(utteranceId: String?) {
-                        main.post { onItemFinished() }
+                        main.post {
+                            emitTts("error")
+                            onItemFinished()
+                        }
                     }
                     override fun onError(utteranceId: String?, errorCode: Int) {
-                        main.post { onItemFinished() }
+                        main.post {
+                            emitTts("error")
+                            onItemFinished()
+                        }
                     }
                 })
                 pump()
@@ -73,7 +90,7 @@ class SpeechQueue(context: Context) {
         }
     }
 
-    fun enqueueSay(text: String, urgent: Boolean) {
+    fun enqueueSay(text: String, urgent: Boolean, audioId: String? = null) {
         val clean = text.trim()
         if (clean.isEmpty()) return
         main.post {
@@ -81,7 +98,7 @@ class SpeechQueue(context: Context) {
                 queue.clear()
                 stopCurrent()
             }
-            queue.addLast(Item.Speak(clean))
+            queue.addLast(Item.Speak(clean, audioId))
             pump()
         }
     }
@@ -103,26 +120,33 @@ class SpeechQueue(context: Context) {
         val item = queue.pollFirst() ?: return
         busy = true
         when (item) {
-            is Item.Speak -> speak(item.text)
+            is Item.Speak -> speak(item)
             is Item.Clip -> playClip(item)
         }
     }
 
-    private fun speak(text: String) {
+    private fun speak(item: Item.Speak) {
         val engine = tts
         if (engine == null || !ttsReady) {
             // TTS still loading — put it back and retry shortly.
-            queue.addFirst(Item.Speak(text))
+            queue.addFirst(item)
             busy = false
             main.postDelayed({ pump() }, 150)
             return
         }
+        currentText = item.text
+        currentAudioId = item.audioId
         setSpeaking(true)
-        val id = UUID.randomUUID().toString()
-        val rc = engine.speak(text, TextToSpeech.QUEUE_FLUSH, null, id)
+        val utteranceId = UUID.randomUUID().toString()
+        val rc = engine.speak(item.text, TextToSpeech.QUEUE_FLUSH, null, utteranceId)
         if (rc != TextToSpeech.SUCCESS) {
+            emitTts("error")
             onItemFinished()
         }
+    }
+
+    private fun emitTts(event: String) {
+        onTtsEvent?.invoke(event, currentText, currentAudioId)
     }
 
     private fun playClip(item: Item.Clip) {

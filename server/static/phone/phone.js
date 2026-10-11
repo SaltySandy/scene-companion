@@ -33,6 +33,7 @@
     listenOn: false,
     lastSpoken: "",
     lastSay: "",
+    lastAudioEvent: "",
     lastTranscript: "",
     framesSent: 0,
     micChunks: 0,
@@ -69,6 +70,7 @@
     window.__saw = {
       state: state,
       lastSay: function () { return state.lastSay; },
+      lastAudioEvent: function () { return state.lastAudioEvent; },
       framesSent: function () { return state.framesSent; },
       protocol: proto,
       policy: policy,
@@ -379,6 +381,14 @@
     sendJson(proto.TYPE_SPEAKING, { active: active });
   }
 
+  function reportAudio(id, event, text) {
+    state.lastAudioEvent = event;
+    const fields = { event: event };
+    if (id) fields.id = id;
+    if (text) fields.text = text;
+    sendJson(proto.TYPE_AUDIO_EVENT, fields);
+  }
+
   function connect() {
     if (!state.running || state.connecting) return;
     state.connecting = true;
@@ -459,7 +469,7 @@
     if (classified.action === "say") {
       state.lastSay = String(obj.text || "");
       appendLine(state.lastSay, true);
-      if (obj.id) sendJson(proto.TYPE_AUDIO_EVENT, { id: obj.id, event: "received" });
+      if (obj.id) reportAudio(obj.id, "received", state.lastSay);
       speech.enqueueSay(state.lastSay, !!obj.urgent, obj.capture_ts, obj.id);
       return;
     }
@@ -523,7 +533,7 @@
       const clipId = state.pendingClipId;
       state.pendingUrgentClip = false;
       state.pendingClipId = null;
-      if (clipId) sendJson(proto.TYPE_AUDIO_EVENT, { id: clipId, event: "received" });
+      if (clipId) reportAudio(clipId, "received", "");
       speech.enqueueClip(msg.payload, msg.flags, urgent);
     }
   }
@@ -775,22 +785,30 @@
 
   SpeechQueue.prototype._speak = function (item, done) {
     sendSpeaking(true);
-    if (item.captureTs != null) {
-      sendJson(proto.TYPE_TTS_START, {
-        capture_ts: item.captureTs,
-        tts_start_ts: proto.nowMs(),
-        say_recv_ts: proto.nowMs(),
-      });
-    }
-    if (item.audioId) sendJson(proto.TYPE_AUDIO_EVENT, { id: item.audioId, event: "playing" });
+    const startFields = {
+      tts_start_ts: proto.nowMs(),
+      say_recv_ts: proto.nowMs(),
+    };
+    if (item.captureTs != null) startFields.capture_ts = item.captureTs;
+    if (item.audioId) startFields.id = item.audioId;
+    if (item.text) startFields.text = item.text;
+    sendJson(proto.TYPE_TTS_START, startFields);
+    reportAudio(item.audioId, "playing", item.text);
     if (!window.speechSynthesis) {
+      reportAudio(item.audioId, "error", item.text);
       done();
       return;
     }
     const u = new SpeechSynthesisUtterance(item.text);
     u.rate = 1.05;
-    u.onend = done;
-    u.onerror = done;
+    u.onend = function () {
+      reportAudio(item.audioId, "ended", item.text);
+      done();
+    };
+    u.onerror = function () {
+      reportAudio(item.audioId, "error", item.text);
+      done();
+    };
     window.speechSynthesis.speak(u);
   };
 

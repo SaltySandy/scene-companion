@@ -37,6 +37,8 @@ object Protocol {
     const val TYPE_ERROR = "error"
     const val TYPE_PROXIMITY = "proximity"
     const val TYPE_ACK = "ack"
+    const val TYPE_TTS_START = "tts_start"
+    const val TYPE_AUDIO_EVENT = "audio_event"
 
     const val STATE_OK = "ok"
     const val STATE_UNKNOWN = "unknown"

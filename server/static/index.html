@@ -267,6 +267,10 @@
         $("phone").textContent = obj.phone_connected ? "connected" : "offline";
       } else if (obj.type === "say") {
         log("say" + (obj.urgent ? " (urgent)" : "") + ": " + obj.text);
+      } else if (obj.type === "tts_start") {
+        log("tts start" + (obj.text ? (": " + obj.text) : ""));
+      } else if (obj.type === "audio_event") {
+        log("tts " + (obj.event || "event") + (obj.text ? (": " + obj.text) : ""));
       } else if (obj.type === "hello_ack") {
         $("phone").textContent = obj.phone_connected ? "connected" : "offline";
         log("hello_ack proto=" + obj.proto);

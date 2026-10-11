@@ -12,6 +12,36 @@ python -m server.tests.pump_frames --count 200   # fake phone
 SENTRY_DSN= python -m pytest -q                  # ALWAYS blank SENTRY_DSN: app.py has a default DSN baked in
 ```
 
+## Shared debug signing
+
+Debug APKs must be signed with the **team debug keystore**, not the VM's random
+`~/.android/debug.keystore`. Otherwise `adb install -r` fails on Alessandro's Pixel
+(`INSTALL_FAILED_UPDATE_INCOMPATIBLE`).
+
+The key itself is a secret: never commit it, never print it, never put it in a PR.
+Agents receive it as an upload (`.b64`) or `SAW_DEBUG_KEYSTORE_B64`. Decode to a
+git-ignored path, then point Gradle at the file:
+
+```bash
+# decode (prints only the output path)
+./scripts/decode_debug_keystore.sh path/to/saw-debug-keystore.b64
+# or: SAW_DEBUG_KEYSTORE_B64=... ./scripts/decode_debug_keystore.sh
+
+export SAW_DEBUG_KEYSTORE="$PWD/android/.secrets/saw-debug.keystore"
+cd android && ./gradlew :app:assembleDebug
+```
+
+Windows laptop (keystore already on disk):
+
+```powershell
+$env:SAW_DEBUG_KEYSTORE = "C:\Users\ihate\saw-debug.keystore"
+cd android; .\gradlew :app:assembleDebug
+# or: .\gradlew :app:assembleDebug "-PSAW_DEBUG_KEYSTORE=C:\Users\ihate\saw-debug.keystore"
+```
+
+If `SAW_DEBUG_KEYSTORE` / `android/.secrets/saw-debug.keystore` is absent, the
+build falls back to the default Android debug key so CI without the secret still works.
+
 ## Architecture in one paragraph
 
 `app.py` receives SAW v1 binary frames on `/v1/stream` and calls `hub.submit_frame`.

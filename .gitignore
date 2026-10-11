@@ -22,3 +22,8 @@ server/tests/artifacts/
 
 # Exported depth models (~100 MB): scripts/export_depth_onnx.py
 models/
+
+# Shared debug keystore (decoded locally; never commit the key)
+android/.secrets/
+*.keystore
+!android/gradle/wrapper/**

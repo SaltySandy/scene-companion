@@ -62,6 +62,8 @@ class MsgType:
     PROXIMITY = "proximity"
     ACK = "ack"  # phone -> laptop: {frame_key, cue_start_ts (phone clock), state}
     FOV = "fov"  # laptop -> viewer only: effective depth band the sensor used
+    TTS_START = "tts_start"  # phone -> laptop: TTS actually started
+    AUDIO_EVENT = "audio_event"  # phone -> laptop: received|playing|ended|error
 
 
 # Proximity heartbeat (laptop -> phone and viewers). state "unknown" means the

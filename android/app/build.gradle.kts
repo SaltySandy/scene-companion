@@ -1,6 +1,27 @@
+import java.io.File
+
 plugins {
     id("com.android.application")
     id("org.jetbrains.kotlin.android")
+}
+
+/** Shared team debug keystore when SAW_DEBUG_KEYSTORE or android/.secrets/saw-debug.keystore exists. */
+fun resolveSawDebugKeystore(): File? {
+    val raw = ((project.findProperty("SAW_DEBUG_KEYSTORE") as String?)
+        ?: System.getenv("SAW_DEBUG_KEYSTORE")
+        ?: "").trim()
+    val candidates = mutableListOf<File>()
+    if (raw.isNotEmpty()) {
+        val given = File(raw)
+        if (given.isAbsolute) {
+            candidates += given
+        } else {
+            candidates += rootProject.file(raw)
+            candidates += file(raw)
+        }
+    }
+    candidates += rootProject.file(".secrets/saw-debug.keystore")
+    return candidates.firstOrNull { it.isFile }
 }
 
 android {
@@ -25,6 +46,18 @@ android {
         manifestPlaceholders["sentryRelease"] = "$versionName+$versionCode"
     }
 
+    val sawDebugStore = resolveSawDebugKeystore()
+    signingConfigs {
+        if (sawDebugStore != null) {
+            create("sawDebug") {
+                storeFile = sawDebugStore
+                storePassword = "android"
+                keyAlias = "androiddebugkey"
+                keyPassword = "android"
+            }
+        }
+    }
+
     buildTypes {
         release {
             isMinifyEnabled = false
@@ -35,6 +68,9 @@ android {
         }
         debug {
             isMinifyEnabled = false
+            if (sawDebugStore != null) {
+                signingConfig = signingConfigs.getByName("sawDebug")
+            }
         }
     }
 
