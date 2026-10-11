@@ -105,7 +105,7 @@ async def test_js_client_handles_feat_proximity_dialect() -> None:
     port = free_port()
     server = await _dialect_server(port, "feat/proximity")
     try:
-        result = run_compat(f"ws://127.0.0.1:{port}", frames=2, wait_ms=400)
+        result = await asyncio.to_thread(run_compat, f"ws://127.0.0.1:{port}", 2, 400)
     finally:
         server.close()
         await server.wait_closed()
@@ -121,7 +121,7 @@ async def test_js_client_handles_pr3_dialect() -> None:
     port = free_port()
     server = await _dialect_server(port, "pr3")
     try:
-        result = run_compat(f"ws://127.0.0.1:{port}", frames=2, wait_ms=400)
+        result = await asyncio.to_thread(run_compat, f"ws://127.0.0.1:{port}", 2, 400)
     finally:
         server.close()
         await server.wait_closed()
