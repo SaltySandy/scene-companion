@@ -1,0 +1,5 @@
+# Runtime for the proximity sensor (server/ai/). No torch needed at runtime:
+# the depth model runs as ONNX, exported once by scripts/export_depth_onnx.py.
+onnxruntime>=1.18
+numpy>=1.24,<2
+pillow>=10

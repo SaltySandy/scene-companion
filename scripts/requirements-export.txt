@@ -1,0 +1,5 @@
+# One-time depth model export (scripts/export_depth_onnx.py).
+# Intel Macs: torch 2.2.2 is the last x86_64 macOS wheel; it needs numpy<2.
+torch>=2.2
+transformers>=4.45,<5
+numpy<2

@@ -18,3 +18,6 @@ android/.idea/
 *.iml
 .DS_Store
 agent-tools/
+
+# Exported depth models (~100 MB): scripts/export_depth_onnx.py
+models/
