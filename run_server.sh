@@ -8,6 +8,7 @@ fi
 # shellcheck disable=SC1091
 source .venv/bin/activate
 pip install -q -r server/requirements.txt
+pip install -q -r server/requirements-ai.txt || echo "AI requirements failed to install: proximity will report unknown"
 export PYTHONPATH="$ROOT${PYTHONPATH:+:$PYTHONPATH}"
 PORT="${SAW_PORT:-8765}"
 exec python -m uvicorn server.app:app --host 0.0.0.0 --port "$PORT"
