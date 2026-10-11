@@ -1,9 +1,13 @@
-"""Spoken "what is it" for a new obstacle, from Claude vision.
+"""Spoken "what is it" for a new obstacle, from Gemini or Claude vision.
 
 Proximity tones are the primary signal; this adds a few words ("open door
 ahead") when something new comes close. It never blocks the heartbeat: the
 call runs as a background task, at most one at a time with a cooldown, and an
 answer that arrives late or after the sector cleared is dropped.
+
+Prefers GEMINI_API_KEY; falls back to ANTHROPIC_API_KEY. Client construction
+happens in warmup() on a worker thread so the first obstacle does not stall
+the event loop.
 """
 
 from __future__ import annotations
@@ -73,45 +77,73 @@ class DescribeGate:
 
 
 _client: Any = None
+_provider: str | None = None
 _disabled_reason: str | None = None
 
 
 def warmup() -> None:
     """Import the SDK and create the client. Blocking: call from a thread, not the event loop."""
-    global _client
+    global _client, _provider
     if not ENABLED or _client is not None:
         return
-    import anthropic
-
-    _client = anthropic.AsyncAnthropic(max_retries=0, timeout=8.0)
+    _client, _provider = vlm.make_client()
+    if _provider:
+        log.info("describe using %s (%s)", _provider, vlm.model_name(_provider))
 
 
 def available() -> bool:
     return ENABLED and _disabled_reason is None
 
 
-async def describe(jpeg: bytes, sector: str) -> str | None:
-    """One short label for the obstacle in `sector`, or None. Disables itself on auth errors."""
-    global _client, _disabled_reason
-    import anthropic
+def status() -> str:
+    """Short label for /health fov.describe."""
+    if not ENABLED:
+        return "off (SAW_DESCRIBE=0)"
+    if _disabled_reason:
+        return f"disabled ({_disabled_reason})"
+    which = _provider or vlm.active_provider()
+    if which:
+        return f"on ({which})"
+    return "idle (no GEMINI_API_KEY or ANTHROPIC_API_KEY; first obstacle will disable it)"
 
+
+def _on_error(exc: BaseException) -> None:
+    """Auth / missing-credentials disable the feature; transient API errors do not."""
+    global _disabled_reason
+    name = type(exc).__name__
+    status_code = getattr(exc, "status_code", None) or getattr(exc, "code", None)
+    message = getattr(exc, "message", None) or str(exc)
+    auth_names = {"AuthenticationError", "PermissionDeniedError"}
+    transient_names = {"APIStatusError", "APIConnectionError", "ServerError", "APIError", "ClientError"}
+    if name in auth_names or status_code in (401, 403):
+        _disabled_reason = f"auth: {status_code or name}"
+        log.warning(
+            "describe disabled for this session (%s); set GEMINI_API_KEY or ANTHROPIC_API_KEY",
+            _disabled_reason,
+        )
+        return
+    if name in transient_names:
+        log.warning("describe failed: %s %s", status_code or name, message)
+        return
+    _disabled_reason = f"{name}: {exc}"
+    log.warning("describe disabled for this session (%s)", _disabled_reason)
+
+
+async def describe(jpeg: bytes, sector: str) -> str | None:
+    """One short label for the obstacle in `sector`, or None. Disables itself on auth errors.
+
+    Does not import SDKs or construct clients: that is warmup()'s job.
+    """
+    global _disabled_reason
     if _client is None:
-        _client = anthropic.AsyncAnthropic(max_retries=0, timeout=8.0)
+        # No key (or warmup never ran). Stay off the event loop; disable like a missing key.
+        _disabled_reason = "no API key"
+        log.warning("describe disabled for this session (%s); set GEMINI_API_KEY or ANTHROPIC_API_KEY", _disabled_reason)
+        return None
     try:
         answer = await vlm.ask_json_async(_client, jpeg, prompt(sector), SCHEMA, effort="low")
-    except (anthropic.AuthenticationError, anthropic.PermissionDeniedError) as exc:
-        _disabled_reason = f"auth: {exc.status_code}"
-        log.warning("describe disabled for this session (%s); set ANTHROPIC_API_KEY", _disabled_reason)
-        return None
-    except anthropic.APIStatusError as exc:
-        log.warning("describe failed: %s %s", exc.status_code, exc.message)
-        return None
-    except anthropic.APIConnectionError as exc:
-        log.warning("describe failed: %s", exc)
-        return None
-    except Exception as exc:  # anthropic may raise before any request, e.g. no credentials
-        _disabled_reason = f"{type(exc).__name__}: {exc}"
-        log.warning("describe disabled for this session (%s)", _disabled_reason)
+    except Exception as exc:
+        _on_error(exc)
         return None
     return clean(str(answer.get("label", ""))) if answer else None
 

@@ -30,6 +30,10 @@ async def test_say_rejects_invalid_json_and_empty_text() -> None:
             await asyncio.sleep(0.05)
         assert server.started, "uvicorn did not start"
         async with httpx.AsyncClient() as client:
+            health = await client.get(f"{origin}/health")
+            assert health.status_code == 200
+            assert "describe" in health.json()["fov"]
+
             bad = await client.post(
                 f"{origin}/say",
                 content='{"text":',
