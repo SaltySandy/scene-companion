@@ -88,10 +88,10 @@ class MainActivity : AppCompatActivity() {
             true
         }
         binding.startStop.setOnClickListener {
-            persistSettings()
             if (StreamService.running) {
+                persistSettings()
                 StreamService.stop(this)
-            } else {
+            } else if (persistSettings()) {
                 requestAndMaybeStart()
             }
         }
@@ -114,8 +114,25 @@ class MainActivity : AppCompatActivity() {
         super.onStop()
     }
 
-    private fun persistSettings() {
-        prefs.hostPort = binding.hostInput.text?.toString()?.ifBlank { Prefs.DEFAULT_HOST } ?: Prefs.DEFAULT_HOST
+    /** Saves a valid host:port. On reject, restores the last good value and TalkBack speaks the error. */
+    private fun persistSettings(): Boolean {
+        val raw = binding.hostInput.text?.toString().orEmpty()
+        val candidate = raw.ifBlank { Prefs.DEFAULT_HOST }
+        val parsed = HostPort.parse(candidate)
+        if (parsed == null) {
+            if (HostPort.parse(prefs.hostPort) == null) {
+                prefs.hostPort = Prefs.DEFAULT_HOST
+            }
+            binding.hostInput.setText(prefs.hostPort)
+            val msg = getString(R.string.invalid_server_address)
+            binding.status.text = msg
+            lastAnnounced = msg
+            announce(msg)
+            return false
+        }
+        prefs.hostPort = parsed.asStored()
+        binding.hostInput.setText(prefs.hostPort)
+        return true
     }
 
     private fun applyListening(enabled: Boolean) {
@@ -127,7 +144,7 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun requestAndMaybeStart() {
-        persistSettings()
+        if (!persistSettings()) return
         val needed = mutableListOf<String>()
         if (!hasCamera()) needed.add(Manifest.permission.CAMERA)
         // Listen is on by default; always ask so Start can stream the mic.

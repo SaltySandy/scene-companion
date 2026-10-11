@@ -8,7 +8,8 @@ class Prefs(context: Context) {
     var hostPort: String
         get() = sp.getString(KEY_HOST, DEFAULT_HOST) ?: DEFAULT_HOST
         set(value) {
-            sp.edit().putString(KEY_HOST, value.trim()).apply()
+            val parsed = HostPort.parse(value) ?: return
+            sp.edit().putString(KEY_HOST, parsed.asStored()).apply()
         }
 
     var micEnabled: Boolean
@@ -32,17 +33,9 @@ class Prefs(context: Context) {
     /** Extra clockwise rotation for the mount. 0 = phone upright in portrait on the chest. */
     val mountRotation: Int get() = FrameMath.normalizeRotation(sp.getInt(KEY_MOUNT, 0))
 
-    fun parsedHost(): String {
-        val raw = hostPort.trim()
-        val idx = raw.lastIndexOf(':')
-        return if (idx > 0) raw.substring(0, idx) else raw.ifBlank { "127.0.0.1" }
-    }
+    fun parsedHost(): String = HostPort.parse(hostPort)?.host ?: "127.0.0.1"
 
-    fun parsedPort(): Int {
-        val raw = hostPort.trim()
-        val idx = raw.lastIndexOf(':')
-        return if (idx > 0) raw.substring(idx + 1).toIntOrNull() ?: DEFAULT_PORT else DEFAULT_PORT
-    }
+    fun parsedPort(): Int = HostPort.parse(hostPort)?.port ?: DEFAULT_PORT
 
     companion object {
         const val DEFAULT_HOST = "127.0.0.1:8765"
