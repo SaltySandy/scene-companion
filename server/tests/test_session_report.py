@@ -70,3 +70,11 @@ def test_cli_reads_a_session_dir(tmp_path: Path, capsys) -> None:
     (tmp_path / "frames.jsonl").write_text("\n".join(json.dumps(rec(t)) for t in (0, 125, 250)) + "\n")
     assert main([str(tmp_path), "--json"]) == 0
     assert json.loads(capsys.readouterr().out)["frames"] == 3
+
+
+def test_capture_to_cue_comes_from_acks() -> None:
+    records = [rec(1000), rec(1125), rec(1250)]
+    acks = [{"frame_key": 1000, "cue_start_ts": 1150}, {"frame_key": 1125, "cue_start_ts": 1335}]
+    s = summarize(records, acks)
+    assert s["acked"] == 2
+    assert s["latency_ms"]["capture_to_cue"]["max"] == 210

@@ -23,6 +23,8 @@ class ProximityCue(
     context: Context,
     private val policy: CuePolicy,
     private val speech: SpeechQueue,
+    /** (frame_key, cue_start_ts epoch ms, state) once per frame, after its first chunk is written. */
+    private val onAck: (Long, Long, String) -> Unit,
 ) {
     private val vibrator: Vibrator? = try {
         if (Build.VERSION.SDK_INT >= 31) {
@@ -88,7 +90,10 @@ class ProximityCue(
                 val pattern = CuePatterns.forState(cue.state)
                 if (synth.render(pattern, cue.pan, buf) && pattern.vibrateMs > 0) vibrate(pattern.vibrateMs)
                 policy.announcement(cue, now)?.let { speech.enqueueSay(it, urgent = true) }
+                val ackKey = policy.takeAck(cue)
+                val cueStartTs = System.currentTimeMillis() // same clock as capture_ts
                 track.write(buf, 0, buf.size)
+                if (ackKey != null) onAck(ackKey, cueStartTs, cue.state.name.lowercase())
             }
         } catch (e: Exception) {
             Log.e(TAG, "cue loop failed", e)

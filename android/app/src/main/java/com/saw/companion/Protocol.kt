@@ -34,6 +34,7 @@ object Protocol {
     const val TYPE_MIC = "mic"
     const val TYPE_ERROR = "error"
     const val TYPE_PROXIMITY = "proximity"
+    const val TYPE_ACK = "ack"
 
     const val STATE_OK = "ok"
     const val STATE_UNKNOWN = "unknown"

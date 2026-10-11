@@ -33,7 +33,8 @@ class StreamService : LifecycleService() {
         prefs = Prefs(this)
         speech = SpeechQueue(this)
         speech.start()
-        cue = ProximityCue(this, cuePolicy, speech).also { it.start() }
+        cue = ProximityCue(this, cuePolicy, speech) { key, ts, state -> client?.sendAck(key, ts, state) }
+            .also { it.start() }
         instance = this
         running = true
         startInForeground()

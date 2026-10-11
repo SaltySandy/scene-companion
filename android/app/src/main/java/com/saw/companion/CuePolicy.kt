@@ -36,6 +36,17 @@ class CuePolicy(private val watchdogMs: Long = 1_000L) {
         if (!isConnected) last = null
     }
 
+    private var lastAckedKey: Long? = null
+
+    /** The frame to ack for this cue, once per frame_key; null if none or already acked. */
+    @Synchronized
+    fun takeAck(cue: Cue): Long? {
+        val key = cue.frameKey ?: return null
+        if (key == lastAckedKey) return null
+        lastAckedKey = key
+        return key
+    }
+
     @Synchronized
     fun cue(nowMs: Long): Cue {
         val p = last

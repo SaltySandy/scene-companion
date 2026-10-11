@@ -59,7 +59,12 @@ def load(path: Path) -> list[dict[str, Any]]:
     return records
 
 
-def summarize(records: list[dict[str, Any]]) -> dict[str, Any]:
+def load_acks(jsonl: Path) -> list[dict[str, Any]]:
+    path = jsonl.parent / "acks.jsonl"
+    return load(path) if path.exists() else []
+
+
+def summarize(records: list[dict[str, Any]], acks: list[dict[str, Any]] | None = None) -> dict[str, Any]:
     if not records:
         return {"frames": 0}
     records = sorted(records, key=lambda r: r["capture_ts"])
@@ -94,6 +99,12 @@ def summarize(records: list[dict[str, Any]]) -> dict[str, Any]:
             out[key] = out.get(key, 0) + 1
         return out
 
+    # Camera to cue start: both stamps on the phone clock, so exact without sync.
+    acks = acks or []
+    keys = {r["frame_key"] for r in records}
+    acked = [a for a in acks if a["frame_key"] in keys]
+    capture_to_cue = [a["cue_start_ts"] - a["frame_key"] for a in acked]
+
     return {
         "session_id": records[0].get("session_id"),
         "frames": processed,
@@ -108,7 +119,9 @@ def summarize(records: list[dict[str, Any]]) -> dict[str, Any]:
             "queue": stats([r["infer_start"] - r["recv_ts"] for r in records]),
             "inference": stats([r["infer_end"] - r["infer_start"] for r in records]),
             "end_to_end": stats(end_to_end),
+            "capture_to_cue": stats(capture_to_cue),
         },
+        "acked": len(acked),
         "capture_gap_ms": stats([g[0] for g in gaps]),
         "long_gaps": [{"gap_ms": g, "after_capture_ts": a, "until_capture_ts": b} for g, a, b in long_gaps[:10]],
         "decisions": count("decision"),
@@ -131,6 +144,8 @@ def render(summary: dict[str, Any]) -> str:
         "",
         f"latency ms              p50    p95    max   ({'absolute' if summary['clock_synced'] else 'transport/end-to-end relative to fastest frame'})",
     ]
+    if summary["acked"] < summary["frames"]:
+        lines[-1] += f"; capture_to_cue from {summary['acked']}/{summary['frames']} acked frames"
     for stage, s in summary["latency_ms"].items():
         lines.append(f"  {stage:<20} {_fmt(s['p50']):>6} {_fmt(s['p95']):>6} {_fmt(s['max']):>6}")
     g = summary["capture_gap_ms"]
@@ -153,7 +168,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--json", action="store_true", help="print the summary as JSON")
     args = parser.parse_args(argv)
     path = find_jsonl(args.target)
-    summary = summarize(load(path))
+    summary = summarize(load(path), load_acks(path))
     print(json.dumps(summary, indent=2) if args.json else render(summary))
     return 0
 

@@ -136,6 +136,7 @@ async def health() -> dict[str, object]:
         "records_dropped": hub.recorder.records_dropped,
         "clock_offset_ms": hub.clock.offset_ms,
         "clock_rtt_ms": hub.clock.rtt_ms,
+        "last_cue_latency_ms": hub.last_cue_latency_ms,
         "lan_ip": lan_ip(),
     }
 
@@ -279,6 +280,10 @@ async def _handle_phone_text(_ws: WebSocket, text: str) -> None:
         t0, tp = obj.get("t0"), obj.get("tp")
         if isinstance(t0, int) and isinstance(tp, int):
             hub.clock.add(t0, tp, proto.now_ms())
+    elif kind == proto.MsgType.ACK:
+        key, cue_ts = obj.get("frame_key"), obj.get("cue_start_ts")
+        if isinstance(key, int) and isinstance(cue_ts, int):
+            hub.on_ack(key, cue_ts, str(obj.get("state") or ""))
     elif kind == proto.MsgType.HELLO:
         log.info("phone hello: %s", obj)
     elif kind == proto.MsgType.CONFIG:

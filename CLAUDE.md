@@ -29,8 +29,10 @@ and must stay in sync with `android/.../Protocol.kt`.
 - **Never touch `hub` from a worker thread.** Blocking inference runs in
   `asyncio.to_thread`; the thread gets bytes and returns a result, the event loop does
   all hub bookkeeping. No locks are needed as long as this holds.
-- **Lineage:** every frame keeps `capture_ts` (phone clock) and `recv_ts` (laptop clock);
-  later commits add `infer_start`, `infer_end`, and a phone `ack` with `cue_start_ts`.
+- **Lineage:** every frame keeps `capture_ts` (phone clock) and `recv_ts` (laptop clock),
+  plus `infer_start`/`infer_end` and `clock_offset_ms`. The phone acks each frame with
+  `cue_start_ts` (phone clock, `sessions/<id>/acks.jsonl`), so camera-to-ear latency
+  needs no clock sync.
   `capture_ts` is the frame key until a real `frame_id` exists.
 - **Camera frames never leave the laptop** and are never committed (`sessions/` is
   git-ignored). Sentry already excludes images.
@@ -53,7 +55,7 @@ Owners: A = data and lineage, B = AI/ML, C = Android and demo.
 | 8 | feat(protocol): `proximity` message + `POST /debug/proximity` | C | done |
 | 9 | feat(ai): depth in `on_frame` via `to_thread`, staleness gate, heartbeat | B | done |
 | 10 | feat(android): `ProximityCue.kt` tones/haptics + watchdog | C | done |
-| 11 | feat(lineage): phone `ack {frame_key, cue_start_ts}` | A+C | |
+| 11 | feat(lineage): phone `ack {frame_key, cue_start_ts}` | A+C | done |
 | 12 | feat(ai): `server/ai/describe.py` VLM "what is it" on new obstacles | B | |
 | 13–15 | stretch: voice questions, structured sink events, demo runbook | | |
 

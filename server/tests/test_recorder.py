@@ -164,3 +164,14 @@ async def test_failing_hook_is_still_recorded(recording_hub: Hub, monkeypatch) -
     assert rec.decision == "none"
     recording_hub.recorder.stop()
     assert len(read_lines(recording_hub.recorder.path)) == 1
+
+
+def test_acks_go_to_their_own_file(tmp_path: Path) -> None:
+    hub = Hub(recorder=Recorder(tmp_path, "s1"))
+    hub.recorder.start()
+    hub.on_ack(frame_key=1000, cue_start_ts=1180, state="near")
+    hub.recorder.stop()
+    assert hub.last_cue_latency_ms == 180
+    (ack,) = read_lines(hub.recorder.ack_path)
+    assert (ack["frame_key"], ack["cue_start_ts"], ack["state"]) == (1000, 1180, "near")
+    assert read_lines(hub.recorder.path) == []

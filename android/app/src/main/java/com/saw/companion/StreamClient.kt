@@ -83,6 +83,17 @@ class StreamClient(
         return ok
     }
 
+    /** Tell the laptop when the cue for a frame started (phone clock). Tiny; sent best-effort. */
+    fun sendAck(frameKey: Long, cueStartTs: Long, state: String) {
+        if (!connected) return
+        socketRef.get()?.send(
+            Protocol.encodeJson(
+                Protocol.TYPE_ACK,
+                mapOf("frame_key" to frameKey, "cue_start_ts" to cueStartTs, "state" to state),
+            ),
+        )
+    }
+
     fun sendMicPcm(pcm: ByteArray, timestampMs: Long): Boolean {
         val ws = socketRef.get() ?: return false
         if (!connected) return false

@@ -75,6 +75,15 @@ class CuePolicyTest {
     }
 
     @Test
+    fun eachFrameIsAckedOnce() {
+        val p = connected()
+        assertNull(p.takeAck(p.cue(0))) // no frame yet
+        p.onProximity(heartbeat("near"), 100)
+        assertEquals(42L, p.takeAck(p.cue(110)))
+        assertNull(p.takeAck(p.cue(130))) // same frame, later chunk
+    }
+
+    @Test
     fun synthBeepsRestartAndPan() {
         val synth = ToneSynth(sampleRate = 1_000)
         val chunk = ShortArray(2 * 20) // 20 ms at 1 kHz

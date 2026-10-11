@@ -130,7 +130,10 @@ If a frame is still on the phone’s outbound WebSocket queue, the next JPEG is 
 Every text message is `{"v":1,"type":"..."}`.
 
 Phone → laptop: `hello`, `config` (`width`, `height`, `fps`, `quality`, `mic`), `ping`,
-`pong` `{"t0":<echoed>,"tp":<phone epoch ms>}` (answer to a laptop clock ping).
+`pong` `{"t0":<echoed>,"tp":<phone epoch ms>}` (answer to a laptop clock ping),
+`ack` `{"frame_key":<capture_ts>,"cue_start_ts":<phone epoch ms>,"state":"clear|near|danger|lost"}`
+(sent once per frame, after the first audio chunk driven by that frame's heartbeat is written).
+`cue_start_ts - capture_ts` is camera-to-ear latency on one clock, no sync needed.
 
 Laptop → phone:
 

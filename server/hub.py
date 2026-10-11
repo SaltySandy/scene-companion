@@ -56,6 +56,7 @@ class Hub:
     clock: ClockSync = field(default_factory=ClockSync)
     clock_task: asyncio.Task[None] | None = None
     proximity_seq: int = 0
+    last_cue_latency_ms: int | None = None  # camera to cue start, phone clock
 
     async def attach_phone(self, ws: WebSocket) -> None:
         if self.phone is not None:
@@ -304,6 +305,18 @@ class Hub:
             proto.PROXIMITY_OK, reading.level, reading.levels, reading.sectors_m, key, age_ms
         )
         return ("suppressed" if reading.raw_level != reading.level else "sent"), age_ms
+
+    def on_ack(self, frame_key: int, cue_start_ts: int, state: str) -> None:
+        """Phone started the cue for frame_key. Both timestamps are on the phone clock."""
+        self.last_cue_latency_ms = cue_start_ts - frame_key
+        self.recorder.record_ack(
+            {
+                "frame_key": frame_key,
+                "cue_start_ts": cue_start_ts,
+                "state": state,
+                "recv_ts": proto.now_ms(),
+            }
+        )
 
     async def clock_loop(self) -> None:
         """Ping the phone with the laptop clock; app.py feeds pongs to self.clock."""

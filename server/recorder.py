@@ -1,7 +1,8 @@
 """Per-frame JSONL recorder. Off unless SAW_RECORD=1.
 
-Writes sessions/<session_id>/frames.jsonl (one FrameRecord per processed frame)
-and, unless SAW_RECORD_JPEG=0, the frame itself as frames/<frame_key>.jpg.
+Writes sessions/<session_id>/frames.jsonl (one FrameRecord per processed frame),
+acks.jsonl (one line per phone ack: when the cue for a frame started), and,
+unless SAW_RECORD_JPEG=0, the frame itself as frames/<frame_key>.jpg.
 The event loop only enqueues; a background thread does all disk I/O. When the
 queue is full the record is dropped and counted, never waited on.
 """
@@ -15,7 +16,8 @@ import secrets
 import threading
 import time
 from pathlib import Path
-from typing import IO
+import json
+from typing import IO, Any
 
 from server.frame_record import FrameRecord
 
@@ -49,9 +51,13 @@ class Recorder:
         self.session_id = session_id
         self.enabled = enabled
         self.save_jpeg = save_jpeg
-        self._queue: queue.Queue[tuple[FrameRecord, bytes | None] | None] = queue.Queue(maxsize=queue_max)
+        # Items: (FrameRecord, jpeg) for frames.jsonl, or (ack dict, None) for acks.jsonl.
+        self._queue: queue.Queue[tuple[FrameRecord | dict[str, Any], bytes | None] | None] = queue.Queue(
+            maxsize=queue_max
+        )
         self._thread: threading.Thread | None = None
         self._file: IO[str] | None = None
+        self._acks: IO[str] | None = None
         self.records_written = 0
         self.records_dropped = 0
 
@@ -78,6 +84,10 @@ class Recorder:
     def path(self) -> Path:
         return self.session_dir / "frames.jsonl"
 
+    @property
+    def ack_path(self) -> Path:
+        return self.session_dir / "acks.jsonl"
+
     def start(self) -> None:
         if not self.enabled:
             log.info("recorder is disabled (set SAW_RECORD=1)")
@@ -89,6 +99,7 @@ class Recorder:
         else:
             self.session_dir.mkdir(parents=True, exist_ok=True)
         self._file = self.path.open("a", encoding="utf-8")
+        self._acks = self.ack_path.open("a", encoding="utf-8")
         self._thread = threading.Thread(target=self._run, name="saw-recorder", daemon=True)
         self._thread.start()
         log.info("recording to %s (jpeg=%s)", self.path, self.save_jpeg)
@@ -117,6 +128,15 @@ class Recorder:
         except Exception:
             log.debug("recorder enqueue failed", exc_info=True)
 
+    def record_ack(self, ack: dict[str, Any]) -> None:
+        """Enqueue one phone ack line. Never blocks, never raises."""
+        if self._thread is None:
+            return
+        try:
+            self._queue.put_nowait((ack, None))
+        except queue.Full:
+            self.records_dropped += 1
+
     def _run(self) -> None:
         while True:
             item = self._queue.get()
@@ -127,11 +147,17 @@ class Recorder:
                 self._write(rec, jpeg)
             except Exception:
                 log.warning("recorder write failed", exc_info=True)
-        if self._file is not None:
-            self._file.close()
-            self._file = None
+        for f in (self._file, self._acks):
+            if f is not None:
+                f.close()
+        self._file = self._acks = None
 
-    def _write(self, rec: FrameRecord, jpeg: bytes | None) -> None:
+    def _write(self, rec: FrameRecord | dict[str, Any], jpeg: bytes | None) -> None:
+        if isinstance(rec, dict):
+            assert self._acks is not None
+            self._acks.write(json.dumps(rec, separators=(",", ":")) + "\n")
+            self._acks.flush()
+            return
         # Image first: a reader that sees the line can trust the JPEG exists.
         if jpeg is not None:
             (self.session_dir / "frames" / f"{rec.frame_key}.jpg").write_bytes(jpeg)
