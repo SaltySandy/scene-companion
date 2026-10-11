@@ -99,10 +99,25 @@ def warmup() -> str | None:
         _cfg = ProximityConfig.from_env()
         _tracker = LevelTracker()
         _model = depth.load()
+        _warm_describe()
     except ImportError as exc:
         log.warning("proximity sensor unavailable: %s (pip install -r server/requirements-ai.txt)", exc)
         _model = None
     return getattr(_model, "name", None)
+
+
+def _warm_describe() -> None:
+    """Import the Claude SDK and build its client now (in warmup's thread).
+
+    Done lazily, the first obstacle description imported anthropic on the event
+    loop and stalled the proximity heartbeat for about a second.
+    """
+    try:
+        from server.ai import describe
+
+        describe.warmup()
+    except Exception:
+        log.debug("describe warmup skipped", exc_info=True)
 
 
 def _infer(jpeg_bytes: bytes) -> Any:
@@ -127,6 +142,9 @@ def fov_params() -> dict[str, Any]:
         "percentile": cfg.percentile,
         "near_m": cfg.near_m,
         "danger_m": cfg.danger_m,
+        "floor": cfg.floor,
+        "floor_top": cfg.floor_top,
+        "floor_margin": cfg.floor_margin,
         "depth_height": getattr(_model, "height", None),
         "depth_width": getattr(_model, "width", None),
         "model": getattr(_model, "name", None),
@@ -140,6 +158,7 @@ def fov_params() -> dict[str, Any]:
         params["sectors_m"] = dict(result.sectors_m)
         params["levels"] = dict(result.levels)
         params["level"] = result.level
+        params["floor_m"] = dict(result.floor_m) if result.floor_m else None
         params["depth_height"] = int(_depth.shape[0])
         params["depth_width"] = int(_depth.shape[1])
         if name:

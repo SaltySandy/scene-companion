@@ -38,9 +38,10 @@ It is used to tune an obstacle warning for a visually impaired walker, so err to
 estimate when unsure.
 
 Split the image into three equal vertical strips: left, center, and right. For each strip, estimate \
-the distance in metres from the camera to the nearest thing the person could walk into at body \
-height: walls, doors, people, furniture, poles, open cabinet doors, railings. The floor itself is not \
-an obstacle; ignore the floor near the bottom of the image. Steps and curbs do count.
+the distance in metres from the camera to the nearest thing the person could walk into or trip over: \
+walls, doors, people, chairs, tables and other furniture, poles, open cabinet doors, railings, and \
+anything standing or lying on the floor such as bags and boxes. The bare floor itself is not an \
+obstacle. Steps and curbs do count.
 
 If nothing is within {MAX_M:g} metres in a strip, give {MAX_M:g} and obstacle "none". Otherwise give \
 the obstacle as one or two plain words."""

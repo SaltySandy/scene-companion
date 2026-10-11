@@ -88,6 +88,7 @@ Owners: A = data and lineage, B = AI/ML, C = Android and demo.
 | 11 | feat(lineage): phone `ack {frame_key, cue_start_ts}` | A+C | done |
 | 12 | feat(ai): `server/ai/describe.py` VLM "what is it" on new obstacles | B | done |
 | 13–15 | stretch: voice questions, structured sink events, demo runbook | | 15 done (`docs/DEMO.md`, `scripts/preflight.py`); 13, 14 open |
+| 16 | feat(ai): floor-obstacle detection (chairs, bags) via per-frame floor plane | B | done |
 
 File ownership to avoid conflicts: A owns `hub.py`, `recorder.py`, `frame_record.py`;
 B owns `server/ai/` and `ai_hook.py`; C owns `android/` and both protocol files.

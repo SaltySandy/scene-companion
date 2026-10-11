@@ -50,3 +50,17 @@ def test_fov_params_read_runtime_cfg_and_stashed_depth(monkeypatch) -> None:
 def test_render_fov_jpeg_none_until_a_frame(monkeypatch) -> None:
     monkeypatch.setattr(ai_hook, "_debug", None)
     assert ai_hook.render_fov_jpeg() is None
+
+
+def test_render_fov_shows_floor_obstacles() -> None:
+    from server.tests.test_proximity import floor_scene
+
+    depth = floor_scene(pitch_deg=10)
+    depth[int(350 * 0.78) : int(350 * 0.94), 110:160] = 1.2  # a chair seat below the band
+    cfg = ProximityConfig()
+    result = analyze(depth, cfg)
+    jpeg, meta = render_fov(depth, result, cfg)
+    assert jpeg[:2] == b"\xff\xd8"
+    assert meta["floor"] is True and meta["floor_top"] is not None
+    assert meta["floor_m"]["center"] == 1.2 and meta["levels"]["center"] == "near"
+    assert meta["band_m"]["center"] > cfg.near_m  # the band alone would have missed it
