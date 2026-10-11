@@ -62,6 +62,12 @@ class StreamService : LifecycleService() {
         }
     }
 
+    /** Called from the UI when the quality picker changes while streaming. */
+    fun applyQuality() {
+        camera?.applyQuality()
+        client?.sendConfig()
+    }
+
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         super.onStartCommand(intent, flags, startId)
         if (intent?.action == ACTION_STOP) {

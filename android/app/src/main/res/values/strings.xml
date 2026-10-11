@@ -13,6 +13,14 @@
     <string name="mic_label">Send microphone to laptop</string>
     <string name="mic_cd">Microphone streaming, off by default. Turn on to send your voice to the laptop.</string>
     <string name="hint_usb">USB is most reliable: adb reverse tcp:8765 tcp:8765, then use 127.0.0.1:8765. Or paste a tunnel URL (https://….trycloudflare.com) to go over the internet.</string>
+    <string name="quality_label">Video quality (changes live)</string>
+    <string name="quality_cd">Video quality. Higher is sharper but sends fewer frames per second.</string>
+    <string name="quality_low">Low</string>
+    <string name="quality_medium">Medium</string>
+    <string name="quality_high">High</string>
+    <string name="quality_low_cd">Low quality, 640 by 480, 8 frames per second</string>
+    <string name="quality_medium_cd">Medium quality, 1280 by 720, 5 frames per second</string>
+    <string name="quality_high_cd">High quality, 1920 by 1080, 3 frames per second</string>
     <string name="camera_required">Camera permission is required.</string>
     <string name="notif_channel">Camera stream</string>
     <string name="notif_channel_desc">Keeps the camera and laptop connection running when the screen locks.</string>

@@ -27,6 +27,7 @@ class CameraStreamer(
     private val capturing = AtomicBoolean(false)
     @Volatile private var lastSentMs = 0L
     private var provider: ProcessCameraProvider? = null
+    private var boundSize: Size? = null
 
     fun start() {
         val future = ProcessCameraProvider.getInstance(context)
@@ -46,6 +47,25 @@ class CameraStreamer(
         } catch (_: Exception) {
         }
         provider = null
+        boundSize = null
+    }
+
+    /**
+     * Picks up a new quality level while streaming. JPEG quality and fps are read per frame;
+     * a resolution change rebinds the camera on the main thread.
+     */
+    fun applyQuality() {
+        val want = Size(prefs.width, prefs.height)
+        if (boundSize == want) return
+        ContextCompat.getMainExecutor(context).execute {
+            val p = provider ?: return@execute
+            try {
+                bind(p)
+            } catch (e: Exception) {
+                Log.e(TAG, "camera rebind failed", e)
+                SawSentry.capture(e, "camera")
+            }
+        }
     }
 
     fun shutdown() {
@@ -56,10 +76,12 @@ class CameraStreamer(
     private fun bind(cameraProvider: ProcessCameraProvider) {
         provider = cameraProvider
         cameraProvider.unbindAll()
+        val size = Size(prefs.width, prefs.height)
+        boundSize = size
         val selector = ResolutionSelector.Builder()
             .setResolutionStrategy(
                 ResolutionStrategy(
-                    Size(prefs.width, prefs.height),
+                    size,
                     ResolutionStrategy.FALLBACK_RULE_CLOSEST_HIGHER_THEN_LOWER,
                 ),
             )
@@ -69,10 +91,10 @@ class CameraStreamer(
             .setBackpressureStrategy(ImageAnalysis.STRATEGY_KEEP_ONLY_LATEST)
             .setOutputImageFormat(ImageAnalysis.OUTPUT_IMAGE_FORMAT_YUV_420_888)
             .build()
-        val minIntervalMs = (1000L / prefs.fps.coerceIn(1, 15))
         analysis.setAnalyzer(analysisExecutor) { image ->
             try {
                 val now = System.currentTimeMillis()
+                val minIntervalMs = 1000L / prefs.fps.coerceIn(1, 15)
                 if (now - lastSentMs < minIntervalMs) return@setAnalyzer
                 if (!capturing.compareAndSet(false, true)) return@setAnalyzer
                 try {
