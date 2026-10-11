@@ -1,0 +1,61 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="mobile-web-app-capable" content="yes" />
+  <meta name="theme-color" content="#0b0d10" />
+  <title>Scene Companion</title>
+  <link rel="stylesheet" href="/static/phone/phone.css" />
+</head>
+<body>
+  <h1 id="title">Scene Companion</h1>
+  <p class="lede">Phone web app. Camera and mic go to the laptop. The laptop talks back.</p>
+
+  <p id="status" role="status" aria-live="assertive" aria-atomic="true" data-kind="warn">Stopped</p>
+
+  <button type="button" id="startStop" aria-describedby="status">
+    Start
+  </button>
+
+  <label for="wsUrl">Laptop WebSocket (blank uses this page’s address)</label>
+  <input
+    id="wsUrl"
+    type="text"
+    inputmode="url"
+    autocomplete="off"
+    spellcheck="false"
+    placeholder="wss://laptop.ts.net/v1/stream"
+    aria-describedby="wsHint"
+  />
+  <p class="hint" id="wsHint">
+    On a phone you need HTTPS (Tailscale serve/funnel or a Cloudflare tunnel).
+    Desktop testing can use http://127.0.0.1:8765/phone.
+  </p>
+
+  <label for="listen">Send microphone to laptop</label>
+  <button type="button" id="listen" aria-pressed="false">
+    Listen
+  </button>
+  <p class="hint">Off until you tap it. The laptop transcribes after a pause. While the phone is speaking, the mic is muted.</p>
+
+  <button type="button" id="askWhat" aria-describedby="askHint">
+    What is this?
+  </button>
+  <p class="hint" id="askHint">Describes what the camera sees (Gemini), plus web facts for products, signs and labels (Nimble). Or turn on Listen and ask out loud.</p>
+
+  <h2 class="sr-only">Transcript</h2>
+  <div id="transcript" aria-live="polite" aria-relevant="additions text" aria-label="Transcript"></div>
+
+  <div class="preview-wrap">
+    <video id="preview" autoplay muted playsinline aria-hidden="true"></video>
+  </div>
+
+  <p class="hint">Rear camera at about 640×480, 8 frames per second, JPEG quality 70 — same as the Android app. Frames are dropped, never queued.</p>
+
+  <script src="/static/phone/protocol.js"></script>
+  <script src="/static/phone/cues.js"></script>
+  <script src="/static/phone/phone.js"></script>
+</body>
+</html>

@@ -128,6 +128,7 @@ def test_end_to_end_with_fake_live_session(monkeypatch: pytest.MonkeyPatch) -> N
 
     monkeypatch.setattr(genai, "Client", FakeClient)
     monkeypatch.setenv("GEMINI_API_KEY", "test")
+    monkeypatch.setenv("SAW_WALL_DETECTOR", "1")  # opt-in backup; off by default
 
     async def scenario() -> list[tuple[str, bool]]:
         det = wd.WallDetector()
@@ -158,6 +159,12 @@ def test_end_to_end_with_fake_live_session(monkeypatch: pytest.MonkeyPatch) -> N
         ("Still too close. Back up.", True),
         ("Clear.", False),
     ]
+
+
+def test_off_by_default_even_with_key(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("GEMINI_API_KEY", "test")
+    monkeypatch.delenv("SAW_WALL_DETECTOR", raising=False)
+    assert wd.WallDetector().enabled is False
 
 
 def test_disabled_without_key(monkeypatch: pytest.MonkeyPatch) -> None:

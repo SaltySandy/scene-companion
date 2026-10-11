@@ -15,6 +15,7 @@
       --bad: #ff6b6b;
     }
     * { box-sizing: border-box; }
+    [hidden] { display: none !important; }
     html, body { margin: 0; height: 100%; background: var(--bg); color: var(--ink); font: 16px/1.45 ui-sans-serif, system-ui, sans-serif; }
     header { padding: 16px 20px 8px; display: flex; justify-content: space-between; align-items: baseline; gap: 12px; flex-wrap: wrap; }
     h1 { font-size: 1.15rem; margin: 0; letter-spacing: 0.02em; }
@@ -22,33 +23,48 @@
     .meta { color: var(--muted); font-size: 0.9rem; }
     main { display: grid; grid-template-columns: 1fr 320px; gap: 16px; padding: 8px 20px 20px; height: calc(100% - 64px); }
     @media (max-width: 800px) { main { grid-template-columns: 1fr; height: auto; } }
+    .feeds { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; min-height: 0; }
+    .feeds.overlay { grid-template-columns: 1fr; }
+    @media (max-width: 1100px) { .feeds:not(.overlay) { grid-template-columns: 1fr; } }
     .stage { background: var(--panel); border-radius: 12px; display: flex; align-items: center; justify-content: center; overflow: hidden; min-height: 280px; position: relative; }
     .stage img { max-width: 100%; max-height: 100%; display: block; background: #000; }
+    .stage canvas { max-width: 100%; max-height: 100%; display: block; background: transparent; }
+    .stage .stack { position: relative; display: inline-block; max-width: 100%; max-height: 100%; }
+    .stage .stack img, .stage .stack canvas { max-width: 100%; max-height: 70vh; }
+    .stage .stack canvas { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; }
+    .feeds.overlay #fovStage { position: absolute; inset: 0; background: transparent; opacity: 0.55; pointer-events: none; }
+    .feeds.overlay { position: relative; }
+    .feeds.overlay #fovStage img { max-height: 70vh; }
+    .label { position: absolute; top: 8px; left: 10px; font-size: 0.72rem; letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted); background: rgba(11,13,16,0.7); padding: 2px 8px; border-radius: 6px; }
     .empty { color: var(--muted); padding: 24px; text-align: center; }
-    aside { display: flex; flex-direction: column; gap: 12px; }
+    .empty.bad { color: var(--bad); }
+    aside { display: flex; flex-direction: column; gap: 12px; overflow: auto; }
     .card { background: var(--panel); border-radius: 12px; padding: 14px 16px; }
     .card h2 { margin: 0 0 8px; font-size: 0.78rem; text-transform: uppercase; letter-spacing: 0.08em; color: var(--muted); }
-    .stat { display: flex; justify-content: space-between; padding: 4px 0; }
-    .stat b { font-variant-numeric: tabular-nums; }
+    .stat { display: flex; justify-content: space-between; padding: 4px 0; gap: 12px; }
+    .stat b { font-variant-numeric: tabular-nums; text-align: right; }
     .dot { width: 8px; height: 8px; border-radius: 50%; display: inline-block; margin-right: 6px; background: var(--bad); }
     .dot.on { background: var(--good); }
     textarea, input, button { font: inherit; }
     textarea, select { width: 100%; background: #0b0d10; color: var(--ink); border: 1px solid #2a3340; border-radius: 8px; padding: 8px; }
     textarea { min-height: 72px; resize: vertical; }
     select { width: auto; }
-    .row { display: flex; gap: 8px; margin-top: 8px; align-items: center; }
+    .row { display: flex; gap: 8px; margin-top: 8px; align-items: center; flex-wrap: wrap; }
     button { background: var(--accent); color: #1a1400; border: 0; border-radius: 8px; padding: 8px 12px; font-weight: 700; cursor: pointer; }
     button.ghost { background: transparent; color: var(--ink); border: 1px solid #2a3340; }
     label.chk { color: var(--muted); font-size: 0.9rem; display: flex; gap: 6px; align-items: center; }
+    .prox { font-size: 2rem; font-weight: 800; text-align: center; border-radius: 10px; padding: 10px 0; background: #2a3340; letter-spacing: 0.06em; }
+    .prox.clear { background: #14532d; color: #bbf7d0; }
+    .prox.near { background: #854d0e; color: #fef08a; }
+    .prox.danger { background: #991b1b; color: #fff; }
+    .prox.lost { background: #3b0764; color: #f5d0fe; }
+    .sectors { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; margin-top: 8px; text-align: center; font-variant-numeric: tabular-nums; }
+    .sectors div { background: #0b0d10; border-radius: 8px; padding: 6px 0; }
+    .sectors small { display: block; color: var(--muted); font-size: 0.72rem; }
     .log { font: 12px/1.4 ui-monospace, monospace; color: var(--muted); max-height: 160px; overflow: auto; white-space: pre-wrap; }
     .transcript { background: #f4f7fb; color: #111; border-radius: 8px; min-height: 96px; max-height: 180px; overflow: auto; padding: 8px; font-size: 0.95rem; }
     .transcript .partial { color: #6b7280; }
     .transcript .final { color: #111; font-weight: 650; }
-    .wall { font-size: 1.6rem; font-weight: 800; letter-spacing: 0.02em; padding: 10px 12px; border-radius: 8px; text-align: center; background: #222a35; color: var(--muted); }
-    .wall.clear { background: #12321f; color: var(--good); }
-    .wall.approaching { background: #3a2f0b; color: var(--accent); }
-    .wall.too_close { background: #4a1414; color: var(--bad); animation: pulse 0.6s ease-in-out infinite alternate; }
-    @keyframes pulse { from { opacity: 1; } to { opacity: 0.55; } }
   </style>
 </head>
 <body>
@@ -57,17 +73,45 @@
     <div class="meta"><span class="dot" id="dot"></span><span id="conn">connecting…</span></div>
   </header>
   <main>
-    <section class="stage" aria-label="Phone camera feed">
-      <div class="empty" id="empty">Waiting for frames from the phone.</div>
-      <img id="frame" alt="Latest frame from the phone camera" hidden />
-    </section>
+    <div>
+      <div class="feeds" id="feeds">
+        <section class="stage" aria-label="Phone camera feed" id="liveStage">
+          <div class="empty" id="empty">Waiting for frames from the phone.</div>
+          <div class="stack" id="liveStack" hidden>
+            <img id="frame" alt="Latest frame from the phone camera" />
+            <canvas id="roiCanvas" aria-hidden="true"></canvas>
+          </div>
+          <span class="label">Live</span>
+        </section>
+        <section class="stage" aria-label="Effective field of view" id="fovStage">
+          <div class="empty" id="fovEmpty">Waiting for a depth snapshot.</div>
+          <img id="fov" alt="Depth band the proximity detector uses" hidden />
+          <span class="label">Detector FoV</span>
+        </section>
+      </div>
+    </div>
     <aside>
       <div class="card">
-        <h2>Wall detector (Gemini Live)</h2>
-        <div class="wall" id="wallLevel" role="status" aria-live="assertive">OFF</div>
-        <div class="stat"><span>Confidence</span><b id="wallConf">—</b></div>
-        <div class="stat"><span>Seen</span><b id="wallNote">—</b></div>
-        <div class="stat"><span>Session</span><b id="wallConn">—</b></div>
+        <h2>Proximity (what the walker hears)</h2>
+        <div class="prox lost" id="prox" role="status" aria-live="polite">NO SIGNAL</div>
+        <div class="sectors">
+          <div><small>left</small><b id="secL">—</b></div>
+          <div><small>center</small><b id="secC">—</b></div>
+          <div><small>right</small><b id="secR">—</b></div>
+        </div>
+        <div class="stat"><span>Frame age at send</span><b id="proxAge">—</b></div>
+      </div>
+      <div class="card">
+        <h2>Detector FoV</h2>
+        <div class="stat"><span>Depth input</span><b id="fovSize">—</b></div>
+        <div class="stat"><span>ROI band</span><b id="fovRoi">—</b></div>
+        <div class="stat"><span>Percentile</span><b id="fovPct">—</b></div>
+        <div class="stat"><span>Near / danger</span><b id="fovThr">—</b></div>
+        <div class="stat"><span>Mount</span><b id="fovMount">upright (phone)</b></div>
+        <div class="stat"><span>Describe</span><b id="fovDescribe">—</b></div>
+        <div class="row">
+          <label class="chk"><input type="checkbox" id="overlayBox" /> overlay on live</label>
+        </div>
       </div>
       <div class="card">
         <h2>Stream</h2>
@@ -117,60 +161,118 @@
     </aside>
   </main>
   <script>
-    const proto = location.protocol === "https:" ? "wss" : "ws";
-    const ws = new WebSocket(`${proto}://${location.host}/v1/viewer`);
-    ws.binaryType = "arraybuffer";
-
     const $ = (id) => document.getElementById(id);
     const logEl = $("log");
     function log(line) {
       const t = new Date().toLocaleTimeString();
       logEl.textContent = `[${t}] ${line}\n` + logEl.textContent;
     }
-
-    ws.addEventListener("open", () => {
-      $("dot").classList.add("on");
-      $("conn").textContent = "viewer connected";
-      log("viewer socket open");
-    });
-    ws.addEventListener("close", () => {
-      $("dot").classList.remove("on");
-      $("conn").textContent = "viewer disconnected — reload to retry";
-      log("viewer socket closed");
-    });
-    ws.addEventListener("error", () => log("viewer socket error"));
-
-    let url = null;
-    ws.addEventListener("message", (ev) => {
-      if (ev.data instanceof ArrayBuffer) {
-        const bytes = new Uint8Array(ev.data);
-        if (bytes.byteLength < 20) return;
-        const payloadLen = new DataView(ev.data).getUint32(16);
-        const jpeg = bytes.subarray(20, 20 + payloadLen);
-        const blob = new Blob([jpeg], { type: "image/jpeg" });
-        if (url) URL.revokeObjectURL(url);
-        url = URL.createObjectURL(blob);
-        $("frame").src = url;
-        $("frame").hidden = false;
-        $("empty").hidden = true;
-        return;
+    function showStatus(text, ok) {
+      $("conn").textContent = text;
+      $("dot").classList.toggle("on", !!ok);
+    }
+    function showSocketError(reason) {
+      showStatus(reason, false);
+      log(reason);
+      if ($("liveStack").hidden) {
+        $("empty").hidden = false;
+        $("empty").classList.add("bad");
+        $("empty").textContent = reason;
       }
+    }
+
+    let frameUrl = null;
+    let lastWsFrame = 0;
+    let lastHttpTs = "";
+    let lastFovSeq = -1;
+    let fovMeta = null;
+    let ws = null;
+    let reconnectTimer = null;
+
+    function jpegFromBinary(buf) {
+      const bytes = buf instanceof Uint8Array ? buf : new Uint8Array(buf);
+      if (bytes.byteLength >= 2 && bytes[0] === 0xff && bytes[1] === 0xd8) return bytes;
+      if (bytes.byteLength < 20) return null;
+      if (bytes[0] !== 83 || bytes[1] !== 65 || bytes[2] !== 87 || bytes[3] !== 49) return null; // SAW1
+      const payloadLen = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength).getUint32(16, false);
+      if (payloadLen < 1 || 20 + payloadLen > bytes.byteLength) return null;
+      return bytes.subarray(20, 20 + payloadLen);
+    }
+
+    function showFrame(jpeg) {
+      const blob = jpeg instanceof Blob ? jpeg : new Blob([jpeg], { type: "image/jpeg" });
+      if (frameUrl) URL.revokeObjectURL(frameUrl);
+      frameUrl = URL.createObjectURL(blob);
+      $("frame").src = frameUrl;
+      $("liveStack").hidden = false;
+      $("empty").hidden = true;
+      $("empty").classList.remove("bad");
+    }
+
+    function applyFovMeta(meta) {
+      if (!meta) return;
+      fovMeta = meta;
+      const h = meta.depth_height, w = meta.depth_width;
+      $("fovSize").textContent = (h && w) ? (h + "×" + w) : "—";
+      $("fovRoi").textContent = (typeof meta.roi_top === "number")
+        ? (meta.roi_top + "–" + meta.roi_bottom) : "—";
+      $("fovPct").textContent = (typeof meta.percentile === "number") ? ("p" + meta.percentile) : "—";
+      $("fovThr").textContent = (typeof meta.near_m === "number")
+        ? (meta.near_m + " / " + meta.danger_m + " m") : "—";
+      $("fovMount").textContent = meta.mount_note || "upright (phone)";
+      $("fovDescribe").textContent = meta.describe || "—";
+      if (meta.has_jpeg && typeof meta.seq === "number" && meta.seq !== lastFovSeq) {
+        lastFovSeq = meta.seq;
+        $("fov").src = "/fov.jpg?t=" + meta.seq;
+        $("fov").hidden = false;
+        $("fovEmpty").hidden = true;
+      } else if (!meta.has_jpeg) {
+        $("fov").removeAttribute("src");
+        $("fov").hidden = true;
+        $("fovEmpty").hidden = false;
+        $("fovEmpty").textContent = meta.model
+          ? "Waiting for a depth snapshot."
+          : "No depth model loaded — ROI band is drawn on the live frame.";
+      }
+      drawRoi();
+    }
+
+    function drawRoi() {
+      const img = $("frame");
+      const canvas = $("roiCanvas");
+      if (!fovMeta || !img.naturalWidth) return;
+      canvas.width = img.naturalWidth;
+      canvas.height = img.naturalHeight;
+      const ctx = canvas.getContext("2d");
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+      const y0 = canvas.height * (fovMeta.roi_top || 0);
+      const y1 = canvas.height * (fovMeta.roi_bottom || 1);
+      ctx.fillStyle = "rgba(11,13,16,0.45)";
+      ctx.fillRect(0, 0, canvas.width, y0);
+      ctx.fillRect(0, y1, canvas.width, canvas.height - y1);
+      ctx.strokeStyle = "#f5c542";
+      ctx.lineWidth = Math.max(2, canvas.width / 200);
+      ctx.strokeRect(1, y0, canvas.width - 2, Math.max(2, y1 - y0));
+      ctx.strokeStyle = "#e8edf4";
+      ctx.lineWidth = 1;
+      ctx.beginPath();
+      ctx.moveTo(canvas.width / 3, y0);
+      ctx.lineTo(canvas.width / 3, y1);
+      ctx.moveTo((canvas.width * 2) / 3, y0);
+      ctx.lineTo((canvas.width * 2) / 3, y1);
+      ctx.stroke();
+    }
+    $("frame").addEventListener("load", drawRoi);
+
+    function handleText(raw) {
       let obj;
-      try { obj = JSON.parse(ev.data); } catch { return; }
+      try { obj = JSON.parse(raw); } catch { return; }
       if (obj.type === "stats") {
         $("fps").textContent = obj.fps;
         $("lat").textContent = obj.latency_ms + " ms";
         $("inter").textContent = obj.inter_ms + " ms";
         $("bytes").textContent = obj.bytes + " B";
         $("phone").textContent = obj.phone_connected ? "connected" : "offline";
-      } else if (obj.type === "wall") {
-        const labels = { clear: "CLEAR", approaching: "APPROACHING", too_close: "TOO CLOSE" };
-        const el = $("wallLevel");
-        el.className = "wall " + (obj.level || "");
-        el.textContent = obj.level ? labels[obj.level] : (obj.connected ? "WAITING" : "OFFLINE");
-        $("wallConf").textContent = obj.confidence == null ? "—" : Math.round(obj.confidence * 100) + "%";
-        $("wallNote").textContent = obj.note || "—";
-        $("wallConn").textContent = obj.error ? ("error: " + obj.error) : (obj.connected ? obj.model : "reconnecting…");
       } else if (obj.type === "assistant") {
         const box = $("askLog");
         if (obj.stage === "looking") box.textContent = "Q: " + obj.question + "\nLooking…";
@@ -182,6 +284,11 @@
       } else if (obj.type === "hello_ack") {
         $("phone").textContent = obj.phone_connected ? "connected" : "offline";
         log("hello_ack proto=" + obj.proto);
+        if (obj.fov) applyFovMeta(obj.fov);
+      } else if (obj.type === "proximity") {
+        showProximity(obj);
+      } else if (obj.type === "fov") {
+        applyFovMeta(obj);
       } else if (obj.type === "mic") {
         log("mic chunk " + obj.bytes + " B");
       } else if (obj.type === "transcript") {
@@ -206,7 +313,108 @@
           pending.textContent = stamp + "  " + obj.text;
         }
       }
-    });
+    }
+
+    async function onWsMessage(ev) {
+      if (typeof ev.data === "string") {
+        handleText(ev.data);
+        return;
+      }
+      let buf = ev.data;
+      if (buf instanceof Blob) buf = await buf.arrayBuffer();
+      if (!(buf instanceof ArrayBuffer)) return;
+      const jpeg = jpegFromBinary(buf);
+      if (!jpeg) return;
+      lastWsFrame = performance.now();
+      showFrame(jpeg);
+    }
+
+    function viewerUrl() {
+      const proto = location.protocol === "https:" ? "wss" : "ws";
+      return proto + "://" + location.host + "/v1/viewer";
+    }
+
+    function connectViewer() {
+      const url = viewerUrl();
+      try {
+        ws = new WebSocket(url);
+      } catch (err) {
+        showSocketError("viewer socket failed to open: " + err + " (" + url + ")");
+        scheduleReconnect();
+        return;
+      }
+      ws.binaryType = "arraybuffer";
+      ws.addEventListener("open", () => {
+        showStatus("viewer connected", true);
+        $("empty").classList.remove("bad");
+        log("viewer socket open " + url);
+      });
+      ws.addEventListener("close", (ev) => {
+        const why = "viewer socket closed (code " + ev.code + (ev.reason ? " " + ev.reason : "") + ")";
+        showSocketError(why + " — retrying, also polling /latest.jpg");
+        scheduleReconnect();
+      });
+      ws.addEventListener("error", () => {
+        showSocketError("viewer socket error (" + url + ") — polling /latest.jpg");
+      });
+      ws.addEventListener("message", (ev) => { onWsMessage(ev).catch((e) => log(String(e))); });
+    }
+
+    function scheduleReconnect() {
+      if (reconnectTimer) return;
+      reconnectTimer = setTimeout(() => {
+        reconnectTimer = null;
+        connectViewer();
+      }, 1500);
+    }
+
+    async function pollLatest() {
+      if (lastWsFrame && performance.now() - lastWsFrame < 500) return;
+      try {
+        const r = await fetch("/latest.jpg", { cache: "no-store" });
+        if (!r.ok) return;
+        const blob = await r.blob();
+        if (!blob.size) return;
+        const ts = r.headers.get("X-Capture-Ts") || String(blob.size);
+        if (ts === lastHttpTs && !$("liveStack").hidden) return;
+        lastHttpTs = ts;
+        showFrame(blob);
+      } catch (err) {
+        log("latest.jpg poll failed: " + err);
+      }
+    }
+
+    async function pollFov() {
+      if (ws && ws.readyState === WebSocket.OPEN && lastFovSeq >= 0) return;
+      try {
+        const r = await fetch("/fov.json", { cache: "no-store" });
+        if (r.ok) applyFovMeta(await r.json());
+      } catch (err) {
+        log("fov.json poll failed: " + err);
+      }
+    }
+
+    // Mirrors the phone watchdog: no heartbeat for 1 s means the walker hears "sensor lost".
+    let lastProx = 0;
+    function showProximity(p) {
+      lastProx = performance.now();
+      const el = $("prox");
+      const known = p.state === "ok" && ["clear", "near", "danger"].includes(p.level);
+      el.className = "prox " + (known ? p.level : "lost");
+      el.textContent = known ? p.level.toUpperCase() : "UNKNOWN";
+      const s = p.sectors_m || {};
+      const fmt = (v) => (typeof v === "number" ? v.toFixed(1) + " m" : "—");
+      $("secL").textContent = fmt(s.left);
+      $("secC").textContent = fmt(s.center);
+      $("secR").textContent = fmt(s.right);
+      $("proxAge").textContent = typeof p.age_ms === "number" ? p.age_ms + " ms" : "—";
+    }
+    setInterval(() => {
+      if (lastProx && performance.now() - lastProx > 1000) {
+        $("prox").className = "prox lost";
+        $("prox").textContent = "SENSOR LOST";
+      }
+    }, 200);
 
     async function sendSay(urgent) {
       const text = $("sayText").value;
@@ -244,6 +452,13 @@
       const j = await r.json();
       log(j.ok ? ("recall (" + j.backend + "): " + j.text) : ("recall failed: " + j.error));
     };
+    $("overlayBox").onchange = () => $("feeds").classList.toggle("overlay", $("overlayBox").checked);
+
+    pollLatest();
+    pollFov();
+    setInterval(pollLatest, 250);
+    setInterval(pollFov, 500);
+    connectViewer();
   </script>
 </body>
 </html>

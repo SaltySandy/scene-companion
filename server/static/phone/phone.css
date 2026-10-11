@@ -1,0 +1,174 @@
+:root {
+  --bg: #0b0d10;
+  --ink: #f4f7fb;
+  --muted: #a8b3c4;
+  --accent: #f5c542;
+  --on-accent: #1a1400;
+  --field: #1b212a;
+  --good: #3dd68c;
+  --bad: #ff6b6b;
+  --focus: #7dd3fc;
+}
+
+* { box-sizing: border-box; }
+
+html, body {
+  margin: 0;
+  min-height: 100%;
+  background: var(--bg);
+  color: var(--ink);
+  font: 18px/1.4 system-ui, -apple-system, "Segoe UI", sans-serif;
+}
+
+body {
+  padding: 20px;
+  max-width: 720px;
+  margin: 0 auto;
+}
+
+h1 {
+  margin: 0;
+  color: var(--accent);
+  font-size: 1.35rem;
+}
+
+.lede {
+  color: var(--muted);
+  font-size: 0.95rem;
+  margin: 6px 0 0;
+}
+
+#status {
+  margin: 16px 0 0;
+  font-size: 1.7rem;
+  font-weight: 750;
+  line-height: 1.2;
+}
+
+#status[data-kind="good"] { color: var(--good); }
+#status[data-kind="bad"] { color: var(--bad); }
+#status[data-kind="warn"] { color: var(--accent); }
+
+button, input {
+  font: inherit;
+}
+
+button {
+  border: 0;
+  border-radius: 14px;
+  min-height: 72px;
+  padding: 16px 18px;
+  font-weight: 750;
+  cursor: pointer;
+}
+
+button:focus-visible, input:focus-visible {
+  outline: 3px solid var(--focus);
+  outline-offset: 3px;
+}
+
+#startStop {
+  display: block;
+  width: 100%;
+  min-height: 220px;
+  margin-top: 20px;
+  background: var(--accent);
+  color: var(--on-accent);
+  font-size: 2.2rem;
+}
+
+#startStop[data-running="1"] {
+  background: #c44;
+  color: #fff;
+}
+
+#listen {
+  display: block;
+  width: 100%;
+  margin-top: 10px;
+  background: var(--field);
+  color: var(--ink);
+  font-size: 1.4rem;
+}
+
+#listen[aria-pressed="true"] {
+  background: var(--accent);
+  color: var(--on-accent);
+}
+
+#askWhat {
+  display: block;
+  width: 100%;
+  min-height: 96px;
+  margin-top: 16px;
+  background: var(--field);
+  color: var(--ink);
+  font-size: 1.6rem;
+}
+
+label {
+  display: block;
+  margin-top: 16px;
+  color: var(--muted);
+  font-size: 0.95rem;
+}
+
+input[type="text"] {
+  width: 100%;
+  min-height: 56px;
+  margin-top: 6px;
+  padding: 12px;
+  border: 1px solid #2a3340;
+  border-radius: 10px;
+  background: var(--field);
+  color: var(--ink);
+}
+
+.hint {
+  color: var(--muted);
+  font-size: 0.88rem;
+  margin: 8px 0 0;
+}
+
+#transcript {
+  margin-top: 12px;
+  min-height: 72px;
+  max-height: 180px;
+  overflow: auto;
+  padding: 12px;
+  border-radius: 10px;
+  background: #f4f7fb;
+  color: #111;
+  font-size: 1rem;
+}
+
+#transcript .partial { color: #6b7280; }
+#transcript .final { font-weight: 650; }
+#transcript:empty::before {
+  content: "Nothing spoken yet.";
+  color: #6b7280;
+}
+
+.preview-wrap {
+  margin-top: 16px;
+}
+
+#preview {
+  width: 100%;
+  max-height: 160px;
+  object-fit: cover;
+  background: #000;
+  border-radius: 10px;
+}
+
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}

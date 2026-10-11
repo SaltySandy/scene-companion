@@ -31,6 +31,13 @@ foreach ($raw in Get-Content server\requirements-optional.txt) {
     }
 }
 
+Write-Host "Installing proximity sensor packages (depth model)..."
+& $Py -m pip install -q -r server\requirements-ai.txt
+if ($LASTEXITCODE -ne 0) {
+    Write-Host "  Proximity packages failed to install on this Python. The sensor will report 'unknown'." -ForegroundColor Yellow
+    Write-Host "  Fix: install 64-bit Python 3.12, delete the .venv folder, run this script again." -ForegroundColor Yellow
+}
+
 $env:PYTHONPATH = $Root
 if (-not $env:SAW_PORT) {
     $env:SAW_PORT = "8765"

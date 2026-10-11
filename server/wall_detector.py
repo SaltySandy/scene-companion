@@ -17,7 +17,8 @@ How it works
 Environment variables (all optional except the key)
 ---------------------------------------------------
 GEMINI_API_KEY            required; detector stays off without it
-SAW_WALL_DETECTOR         "0" to switch the detector off
+SAW_WALL_DETECTOR         "1" to switch it on. OFF by default: the team's depth model
+                          (server/ai/proximity.py) is the proximity sensor; this is a backup.
 SAW_GEMINI_LIVE_MODEL     default ``gemini-3.8-live``
 SAW_WALL_INTERVAL_SEC     seconds between checks (default 1.0, min 1.0)
 SAW_WALL_ALERT_COOLDOWN   seconds between repeated "back up" alerts (default 2.5)
@@ -155,7 +156,7 @@ StatusFn = Callable[[dict[str, Any]], Awaitable[None]]
 class WallDetector:
     def __init__(self) -> None:
         self.api_key = os.environ.get("GEMINI_API_KEY") or os.environ.get("GOOGLE_API_KEY") or ""
-        self.enabled = _env_flag("SAW_WALL_DETECTOR", True) and bool(self.api_key)
+        self.enabled = _env_flag("SAW_WALL_DETECTOR", False) and bool(self.api_key)
         self.model = os.environ.get("SAW_GEMINI_LIVE_MODEL", "gemini-3.8-live").strip()
         self.interval = max(1.0, _env_float("SAW_WALL_INTERVAL_SEC", 1.0))
         self.reply_timeout = _env_float("SAW_WALL_REPLY_TIMEOUT", 4.0)
@@ -177,17 +178,15 @@ class WallDetector:
     # -- wiring ------------------------------------------------------------
 
     def submit(self, jpeg: bytes, ts: int) -> None:
-        """Keep only the newest frame. Never blocks."""
-        self._latest = (jpeg, ts)
+        """Keep only the newest frame. Never blocks. No-op when the detector is off."""
+        if self.enabled:
+            self._latest = (jpeg, ts)
 
     def start(self, speak: SpeakFn, status: StatusFn | None = None) -> None:
         self._speak = speak
         self._status = status
         if not self.enabled:
-            if not self.api_key:
-                log.info("Wall detector disabled (GEMINI_API_KEY not set)")
-            else:
-                log.info("Wall detector disabled (SAW_WALL_DETECTOR=0)")
+            log.debug("Gemini wall detector off (depth model is the proximity sensor; SAW_WALL_DETECTOR=1 enables it)")
             return
         if self._task is None or self._task.done():
             self._task = asyncio.create_task(self._run_forever(), name="saw-wall-detector")

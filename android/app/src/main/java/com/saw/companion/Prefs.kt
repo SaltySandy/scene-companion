@@ -22,6 +22,9 @@ class Prefs(context: Context) {
     val fps: Int get() = sp.getInt(KEY_FPS, 8)
     val quality: Int get() = sp.getInt(KEY_Q, 70)
 
+    /** Extra clockwise rotation for the mount. 0 = phone upright in portrait on the chest. */
+    val mountRotation: Int get() = FrameMath.normalizeRotation(sp.getInt(KEY_MOUNT, 0))
+
     fun parsedHost(): String {
         val raw = hostPort.trim()
         val idx = raw.lastIndexOf(':')
@@ -43,5 +46,6 @@ class Prefs(context: Context) {
         private const val KEY_H = "height"
         private const val KEY_FPS = "fps"
         private const val KEY_Q = "quality"
+        private const val KEY_MOUNT = "mount_rotation"
     }
 }

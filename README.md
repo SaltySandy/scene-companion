@@ -3,9 +3,14 @@
 Hackathon skeleton for an AI-assisted situational-awareness tool. The **phone is the eyes and ears**. The **AI runs on a laptop**. This repo is the plumbing: Android camera/mic uplink, laptop live viewer, and a single hook where the model goes.
 
 - **Android app** (`android/`): CameraX rear-camera JPEG stream over WebSocket, TTS + clip playback, optional mic, TalkBack-first UI.
+- **Phone web app** (`server/static/phone/`): same live path in Safari / Chrome, no APK. Open `/phone` on the laptop server. **iPhone setup:** [docs/IPHONE.md](docs/IPHONE.md).
 - **Laptop server** (`server/`): FastAPI WebSocket + a local web page showing the live feed. Put vision logic in `server/ai_hook.py`.
 
 Protocol version: **v1**.
+
+**Proximity sensor demo:** the laptop runs metric depth on each frame and streams a left/center/right
+heartbeat that the phone plays as tones and haptics. Setup, safety rules, preflight, and tuning are in
+[docs/DEMO.md](docs/DEMO.md).
 
 ---
 
@@ -32,6 +37,8 @@ Both create a `.venv`, install `server/requirements.txt`, and start uvicorn. On 
 Speech-to-text is local faster-whisper on CPU (`int8`, no GPU). The model name is `WHISPER_MODEL` (default `base.en`). The first run downloads it from Hugging Face: **`base.en` is about 150 MB**. `tiny.en` is smaller if you want a quicker first start. `run_server.ps1` prints this before the server comes up.
 
 Open the viewer: [http://127.0.0.1:8765/](http://127.0.0.1:8765/)
+
+Desktop browser test of the phone client (no HTTPS needed): [http://127.0.0.1:8765/phone](http://127.0.0.1:8765/phone). iPhone Safari needs HTTPS — follow **[Use on iPhone](docs/IPHONE.md)**.
 
 ### 2. Install the APK
 
@@ -66,6 +73,18 @@ curl -X POST http://127.0.0.1:8765/say \
 ```
 
 Or type in the viewer text box. A scripted fake phone is in `server/tests/fake_client.py`.
+
+---
+
+## Use on iPhone
+
+**Full setup: [docs/IPHONE.md](docs/IPHONE.md).** Short version:
+
+1. On the laptop: `.\run_server.ps1` (or `$env:SAW_PORT = "8767"; .\run_server.ps1`).
+2. HTTPS in front, same port: `.\serve_phone.ps1` or `.\serve_phone.ps1 -Port 8767`. That runs `tailscale serve --bg --https=443 http://127.0.0.1:<port>` (tailnet-only). Fallback: `.\serve_phone.ps1 -Mode cloudflare`.
+3. iPhone: Tailscale app, same tailnet, Safari → `https://<laptop-magicdns>/phone`, tap **Start**, allow camera.
+
+iOS Safari only grants camera, mic, and motion in a secure context. Plain `http://LAN_IP` will not get a camera. One phone per server. Turn Serve off with `tailscale serve --https=443 off`.
 
 ---
 
@@ -104,52 +123,20 @@ The stub logs every partial and final. Finals are written to the event sinks and
 
 ---
 
-## Wall detector (Gemini Live)
-
-`server/wall_detector.py` watches the camera feed with the **Gemini Live API** and warns the user when they are about to walk into a wall.
-
-1. Get a key at <https://aistudio.google.com/apikey>.
-2. Copy `.env.example` to `.env` and set `GEMINI_API_KEY=...`.
-3. Run the server as usual. The startup banner shows `Walls : Gemini Live (...)`.
-
-About once a second (the Live API's max video rate) the newest frame goes to one long-lived Live session. Gemini answers by calling the tool `report_wall_proximity` with `clear`, `approaching` (1–3 m) or `too_close` (under ~1 m). Then the phone hears:
-
-| Verdict | Phone says | Interrupts other speech? |
-| --- | --- | --- |
-| too_close | "Stop. Wall ahead. Back up." then "Still too close. Back up." every 2.5 s | yes (`urgent`) |
-| approaching | "Wall ahead, slow down." at most every 6 s | no |
-| back to clear | "Clear." (or "Okay, a little more room now.") | no |
-
-The viewer page has a **Wall detector** card that shows the live verdict (green, amber or flashing red). Sessions reconnect on their own (errors, `go_away`, and every 8 minutes), and context compression keeps them alive past the 2‑minute video limit. Tuning knobs are listed in `.env.example`. The "frame received" demo announcement is off whenever a Gemini key is set.
-
-Tests (no key or network needed): `PYTHONPATH=. python -m pytest server/tests/test_wall_detector.py -q`
-
 ## "What is this?" (Gemini + Nimble)
 
-Turn on **Listen** on the phone and ask a question about what the camera sees, e.g. *"What is this?"*, *"What does this sign say?"*, *"What's in front of me?"*.
+The depth model above is the proximity sensor. Gemini and Nimble only answer questions about what the camera sees.
 
-1. The newest camera frame and the question go to Gemini (`SAW_GEMINI_VISION_MODEL`). The phone speaks a short answer right away.
+Put `GEMINI_API_KEY` (and optionally `NIMBLE_API_KEY`) in `.env`. Then ask on the phone: turn on **Listen** and say *"What is this?"*, *"What does this sign say?"*, or tap **What is this?** on the `/phone` web client.
+
+1. The newest frame (`hub.last_jpeg`) and the question go to Gemini (`SAW_GEMINI_VISION_MODEL`, default `gemini-3.5-flash-lite`). The phone speaks a short answer right away.
 2. If Gemini recognises something specific (a product, book, medicine box, landmark, sign), it also returns a search query. With `NIMBLE_API_KEY` set, Nimble's Search API (`POST https://sdk.nimbleway.com/v2/search`) fetches live web results, Gemini condenses them, and the phone adds *"More about it: ..."*.
 
-Wall alerts are urgent and interrupt answers. A new question cancels one still in progress.
+Answers are never urgent, so proximity warnings always win. A new question cancels one still in progress. Code: `server/scene_assistant.py`; endpoint `POST /ask {"question": "..."}`; the laptop viewer has an **Ask** box.
 
-Speech-to-text uses local faster-whisper when installed, otherwise Gemini (finished sentences only). That covers Python versions where faster-whisper has no build.
+Speech-to-text uses local faster-whisper when installed, otherwise Gemini (finished sentences only), which covers Python versions where faster-whisper has no build.
 
-Test without the phone mic: type a question in the viewer's **Ask** box, or
-
-```bash
-curl -X POST http://127.0.0.1:8765/ask -H 'content-type: application/json' -d '{"question":"What is this?"}'
-```
-
-## iPhone (or any phone) without the Android app
-
-`/phone` is a browser version of the phone client. It streams the rear camera, speaks alerts and answers, and sends mic audio, using the same protocol as the Android app. Safari only allows the camera on **https**, so use a free Cloudflare tunnel:
-
-1. Window 1: `.\run_server.ps1`
-2. Window 2: `.\run_tunnel.ps1` (installs `cloudflared` with winget the first time, then run it again). It prints `https://<random>.trycloudflare.com`.
-3. On the iPhone, open that link **plus `/phone`** in Safari, tap **Start** and allow the camera. **Listen** turns on the mic; **What is this?** asks without speaking.
-
-Keep the screen on and Safari in front: iOS pauses the camera and speech in the background. iPhones don't vibrate from web pages, so alerts are spoken only.
+`server/wall_detector.py` is an optional Gemini Live wall detector kept as a backup. It is **off** unless `SAW_WALL_DETECTOR=1`.
 
 ---
 
@@ -189,7 +176,12 @@ If a frame is still on the phone’s outbound WebSocket queue, the next JPEG is 
 
 Every text message is `{"v":1,"type":"..."}`.
 
-Phone → laptop: `hello`, `config` (`width`, `height`, `fps`, `quality`, `mic`), `ping`, `speaking`.
+Phone → laptop: `hello`, `config` (`width`, `height`, `fps`, `quality`, `mic`), `ping`,
+`speaking`,
+`pong` `{"t0":<echoed>,"tp":<phone epoch ms>}` (answer to a laptop clock ping),
+`ack` `{"frame_key":<capture_ts>,"cue_start_ts":<phone epoch ms>,"state":"clear|near|danger|lost"}`
+(sent once per frame, after the first audio chunk driven by that frame's heartbeat is written).
+`cue_start_ts - capture_ts` is camera-to-ear latency on one clock, no sync needed.
 
 `speaking` is half-duplex: `{"v":1,"type":"speaking","active":true}` while the phone is playing TTS or a clip. The server drops mic audio until that flag clears, plus a short tail. `say()` also mutes for about `0.45 + 0.05 * len(text)` seconds (capped at 8) so the speaker does not get transcribed before the phone flag arrives.
 
@@ -198,6 +190,13 @@ Laptop → phone:
 - `hello_ack`
 - `say` — `{"v":1,"type":"say","text":"...","urgent":false}` (Android TTS; lowest latency, works offline)
 - `pong`
+- `ping` `{"t0":<laptop epoch ms>}` — clock sync; the phone answers `pong` with `t0` and its own
+  clock `tp` right away. Sent 5× at connect, then every 2 s. Clients must ignore types they don't know.
+- `proximity` — heartbeat on every processed frame:
+  `{"seq":42,"state":"ok","level":"near","levels":{"left":"clear","center":"near","right":"clear"},
+  "sectors_m":{"left":3.1,"center":1.2,"right":2.8},"frame_key":<capture_ts>,"age_ms":180}`.
+  `state:"unknown"` (level null) means the laptop cannot vouch for the path; the phone treats it
+  like silence and plays the sensor-lost cue, as it does when heartbeats stop for ~1 s.
 - `status` with `msg="audio"` may precede an `AUDIO_CLIP` and can carry `urgent`
 
 Laptop → viewer (same socket as stats):
@@ -209,6 +208,8 @@ HTTP helpers (same laptop):
 
 - `POST /say` JSON `{"text":"...","urgent":false}` or raw text
 - `POST /play` raw audio body, `Content-Type` = mime
+- `POST /debug/proximity` `{"level":"danger"}` or `{"state":"unknown"}` — inject one proximity
+  message to test the phone's cues without the depth model
 - `GET /health`, `GET /`
 
 ---
@@ -241,6 +242,16 @@ python3 -m venv .venv && source .venv/bin/activate
 pip install -r server/requirements.txt
 PYTHONPATH=. python -m pytest server/tests -q
 ```
+
+Phone web client (protocol + Playwright with Chromium’s fake camera):
+
+```bash
+pip install -r server/requirements-web.txt
+python -m playwright install chromium
+PYTHONPATH=. python -m pytest server/tests/test_phone_page.py server/tests/test_phone_protocol.py server/tests/test_phone_compat.py server/tests/test_phone_web.py -q
+```
+
+`test_phone_compat.py` boots the servers from `feat/proximity` and `cursor/proximity-warning-977b` in git worktrees (or a dialect stub if a branch will not start) and drives the same JS protocol the browser uses.
 
 ---
 
@@ -283,7 +294,7 @@ python scripts/tiger_smoke.py
 
 - No on-device model. The AI is a stub plus a commented API example.
 - Phone and laptop clocks are not synced; “latency” on the viewer is `recv_ts - capture_ts` and can look wrong across Wi-Fi. Inter-frame time is the honest number.
-- Cleartext `ws://` only (hackathon LAN / USB). No TLS.
+- The Android APK still uses cleartext `ws://` (hackathon LAN / USB). The `/phone` web client uses `wss://` when the page itself is HTTPS (Tailscale serve/funnel or a Cloudflare tunnel).
 - Transcripts are English (`language="en"`) on CPU. The first `base.en` download is about 150 MB.
 - Emulator camera is a fake scene if you use one; a real phone is the intended client. The emulator also has to be checked before this build goes on a phone (see the report).
 - JPEG encode + rotate on the phone costs a few milliseconds per frame at 640×480.
