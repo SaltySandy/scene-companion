@@ -7,6 +7,7 @@ import logging
 from dataclasses import dataclass, field
 from typing import Any
 
+import sentry_sdk
 from fastapi import WebSocket
 
 from server import protocol as proto
@@ -175,6 +176,7 @@ class Hub:
                 raise
             except Exception:
                 log.exception("on_frame failed")
+                sentry_sdk.capture_exception()
 
     def ensure_worker(self) -> None:
         if self.worker_task is None or self.worker_task.done():

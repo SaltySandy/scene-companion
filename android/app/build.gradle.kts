@@ -14,6 +14,15 @@ android {
         versionCode = 1
         versionName = "0.1.0"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
+
+        // Override with -PsentryDsn=... or sentryDsn= in gradle.properties.
+        // The Sentry Gradle plugin is intentionally not applied: it uploads
+        // mappings and fails the build without an auth token.
+        val sentryDsn = (project.findProperty("sentryDsn") as String?)
+            ?: "https://5c19bb38a79017d8237cfc6fcaedabc4@o4512238207893504.ingest.us.sentry.io/4512238400503810"
+        buildConfigField("String", "SENTRY_DSN", "\"$sentryDsn\"")
+        manifestPlaceholders["sentryDsn"] = sentryDsn
+        manifestPlaceholders["sentryRelease"] = "$versionName+$versionCode"
     }
 
     buildTypes {
@@ -38,6 +47,7 @@ android {
     }
     buildFeatures {
         viewBinding = true
+        buildConfig = true
     }
     testOptions {
         unitTests.isReturnDefaultValues = true
@@ -55,6 +65,7 @@ dependencies {
     implementation("androidx.lifecycle:lifecycle-service:2.8.7")
     implementation("com.google.android.material:material:1.12.0")
     implementation("com.squareup.okhttp3:okhttp:4.12.0")
+    implementation("io.sentry:sentry-android:8.60.0")
 
     testImplementation("junit:junit:4.13.2")
     testImplementation("org.json:json:20240303")

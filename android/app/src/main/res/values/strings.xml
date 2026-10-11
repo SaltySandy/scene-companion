@@ -19,4 +19,6 @@
     <string name="notif_title">Scene Companion is streaming</string>
     <string name="notif_text">Camera is sending frames to the laptop.</string>
     <string name="stop">Stop</string>
+    <string name="sentry_test_sent">Test error sent</string>
+    <string name="sentry_title_cd">Scene Companion. Long press to send a test error report.</string>
 </resources>

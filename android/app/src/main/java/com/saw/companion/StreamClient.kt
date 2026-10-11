@@ -127,6 +127,7 @@ class StreamClient(
                 )
                 setState(ConnectionState.CONNECTED, "connected")
                 listener.onHaptic(true)
+                SawSentry.breadcrumb("connected")
             }
 
             override fun onMessage(webSocket: WebSocket, text: String) {
@@ -147,6 +148,7 @@ class StreamClient(
 
             override fun onFailure(webSocket: WebSocket, t: Throwable, response: Response?) {
                 Log.w(TAG, "socket failure: ${t.message}")
+                SawSentry.capture(t, "websocket")
                 onDrop("failure")
             }
         })
@@ -199,6 +201,7 @@ class StreamClient(
         if (!running) return
         if (wasConnected) {
             listener.onHaptic(false)
+            SawSentry.breadcrumb("disconnected")
         }
         setState(ConnectionState.RETRYING, "connection lost, retrying")
         val delay = backoffMs

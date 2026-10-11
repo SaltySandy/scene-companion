@@ -65,6 +65,11 @@ class MainActivity : AppCompatActivity() {
                 requestAndMaybeStart()
             }
         }
+        binding.title.setOnLongClickListener {
+            SawSentry.debugTrigger()
+            Toast.makeText(this, R.string.sentry_test_sent, Toast.LENGTH_SHORT).show()
+            true
+        }
         binding.startStop.setOnClickListener {
             persistSettings()
             if (StreamService.running) {

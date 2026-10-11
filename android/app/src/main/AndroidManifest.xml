@@ -40,5 +40,12 @@
             android:name=".StreamService"
             android:exported="false"
             android:foregroundServiceType="camera|microphone" />
+
+        <!-- Auto-init is off so SawApp can set release, sample rate, and the image filter.
+             DSN and release stay in the manifest so a build can override them. -->
+        <meta-data android:name="io.sentry.auto-init" android:value="false" />
+        <meta-data android:name="io.sentry.dsn" android:value="${sentryDsn}" />
+        <meta-data android:name="io.sentry.environment" android:value="hackathon" />
+        <meta-data android:name="io.sentry.release" android:value="${sentryRelease}" />
     </application>
 </manifest>

@@ -168,6 +168,18 @@ PYTHONPATH=. python -m pytest server/tests -q
 
 ---
 
+## Error monitoring
+
+Sentry is wired on both sides and does not change the stream. The server reads `SENTRY_DSN` and falls back to the sightline-server project when the variable is unset. Set it empty to turn reporting off. Android uses the sightline-android DSN from the `sentryDsn` Gradle property (`-PsentryDsn=...`), written into `BuildConfig` and the manifest. Environment is `hackathon`. The phone release is `versionName+versionCode` (currently `0.1.0+1`). Camera frames and other images are not attached.
+
+Test events:
+
+```bash
+curl http://127.0.0.1:8765/debug/sentry
+```
+
+On the phone, long-press the title **Scene Companion**.
+
 ## Known limitations
 
 - No on-device model. The AI is a stub plus a commented API example.

@@ -35,6 +35,7 @@ class CameraStreamer(
                 bind(future.get())
             } catch (e: Exception) {
                 Log.e(TAG, "camera provider failed", e)
+                SawSentry.capture(e, "camera")
             }
         }, ContextCompat.getMainExecutor(context))
     }
@@ -80,6 +81,9 @@ class CameraStreamer(
                         val sent = onJpeg(jpeg, now)
                         if (sent) lastSentMs = now
                     }
+                } catch (e: Exception) {
+                    Log.w(TAG, "frame encode failed: ${e.message}")
+                    SawSentry.capture(e, "camera")
                 } finally {
                     capturing.set(false)
                 }

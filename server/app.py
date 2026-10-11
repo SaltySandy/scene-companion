@@ -3,14 +3,18 @@
 from __future__ import annotations
 
 import logging
+import os
 import socket
 import sys
 from contextlib import asynccontextmanager
 from pathlib import Path
 
+import sentry_sdk
 from fastapi import FastAPI, Request, WebSocket, WebSocketDisconnect
 from fastapi.responses import HTMLResponse, JSONResponse, PlainTextResponse
 from fastapi.staticfiles import StaticFiles
+from sentry_sdk.integrations.asyncio import AsyncioIntegration
+from sentry_sdk.integrations.fastapi import FastApiIntegration
 
 from server import protocol as proto
 from server.hub import hub, play, say
@@ -18,6 +22,45 @@ from server.hub import hub, play, say
 log = logging.getLogger("saw")
 STATIC_DIR = Path(__file__).resolve().parent / "static"
 DEFAULT_PORT = 8765
+DEFAULT_SENTRY_DSN = (
+    "https://0954950fd2aaf958b6b3eaf7d322f856@o4512238207893504.ingest.us.sentry.io/4512238400503809"
+)
+
+
+def _drop_images(event, hint):
+    """Never forward image bytes. Request bodies are already disabled."""
+    del hint
+    request = event.get("request") or {}
+    headers = request.get("headers") or {}
+    if isinstance(headers, dict):
+        ctype = ""
+        for key, value in headers.items():
+            if str(key).lower() == "content-type":
+                ctype = str(value).lower()
+                break
+        if ctype.startswith("image/"):
+            request.pop("data", None)
+            event["request"] = request
+    return event
+
+
+def init_sentry() -> None:
+    dsn = os.environ.get("SENTRY_DSN", DEFAULT_SENTRY_DSN).strip()
+    if not dsn:
+        log.info("Sentry disabled (empty SENTRY_DSN)")
+        return
+    sentry_sdk.init(
+        dsn=dsn,
+        environment="hackathon",
+        release="0.1.0",
+        send_default_pii=False,
+        max_request_body_size="never",
+        integrations=[FastApiIntegration(), AsyncioIntegration()],
+        before_send=_drop_images,
+    )
+
+
+init_sentry()
 
 
 def lan_ip() -> str:
@@ -119,14 +162,19 @@ async def phone_stream(ws: WebSocket) -> None:
             message = await ws.receive()
             if message.get("type") == "websocket.disconnect":
                 break
-            if message.get("text") is not None:
-                await _handle_phone_text(ws, message["text"])
-            elif message.get("bytes") is not None:
-                await _handle_phone_bytes(message["bytes"])
+            try:
+                if message.get("text") is not None:
+                    await _handle_phone_text(ws, message["text"])
+                elif message.get("bytes") is not None:
+                    await _handle_phone_bytes(message["bytes"])
+            except Exception:
+                log.exception("phone message failed")
+                sentry_sdk.capture_exception()
     except WebSocketDisconnect:
         pass
     except Exception:
         log.exception("phone stream error")
+        sentry_sdk.capture_exception()
     finally:
         hub.detach_phone(ws)
 
@@ -155,10 +203,17 @@ async def viewer_stream(ws: WebSocket) -> None:
                     obj = proto.decode_json(message["text"])
                 except ValueError:
                     continue
-                if obj["type"] == proto.MsgType.SAY:
-                    await say(str(obj.get("text") or ""), urgent=bool(obj.get("urgent", False)))
+                try:
+                    if obj["type"] == proto.MsgType.SAY:
+                        await say(str(obj.get("text") or ""), urgent=bool(obj.get("urgent", False)))
+                except Exception:
+                    log.exception("viewer message failed")
+                    sentry_sdk.capture_exception()
     except WebSocketDisconnect:
         pass
+    except Exception:
+        log.exception("viewer stream error")
+        sentry_sdk.capture_exception()
     finally:
         hub.detach_viewer(ws)
 
@@ -201,6 +256,17 @@ async def _handle_phone_bytes(data: bytes) -> None:
         await hub._broadcast_viewers_text(
             proto.encode_json(proto.MsgType.MIC, enabled=True, bytes=len(msg.payload), t=msg.timestamp_ms)
         )
+
+
+@app.get("/debug/sentry")
+async def debug_sentry() -> JSONResponse:
+    """Send one test error. Does not affect the camera stream."""
+    try:
+        raise RuntimeError("sightline server sentry debug")
+    except RuntimeError:
+        event_id = sentry_sdk.capture_exception()
+        sentry_sdk.flush(timeout=2.0)
+    return JSONResponse({"ok": True, "event_id": str(event_id) if event_id else None})
 
 
 @app.get("/lan")
