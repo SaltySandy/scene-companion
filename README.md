@@ -123,6 +123,23 @@ The stub logs every partial and final. Finals are written to the event sinks and
 
 ---
 
+## "What is this?" (Gemini + Nimble)
+
+The depth model above is the proximity sensor. Gemini and Nimble only answer questions about what the camera sees.
+
+Put `GEMINI_API_KEY` (and optionally `NIMBLE_API_KEY`) in `.env`. Then ask on the phone: turn on **Listen** and say *"What is this?"*, *"What does this sign say?"*, or tap **What is this?** on the `/phone` web client.
+
+1. The newest frame (`hub.last_jpeg`) and the question go to Gemini (`SAW_GEMINI_VISION_MODEL`, default `gemini-3.5-flash-lite`). The phone speaks a short answer right away.
+2. If Gemini recognises something specific (a product, book, medicine box, landmark, sign), it also returns a search query. With `NIMBLE_API_KEY` set, Nimble's Search API (`POST https://sdk.nimbleway.com/v2/search`) fetches live web results, Gemini condenses them, and the phone adds *"More about it: ..."*.
+
+Answers are never urgent, so proximity warnings always win. A new question cancels one still in progress. Code: `server/scene_assistant.py`; endpoint `POST /ask {"question": "..."}`; the laptop viewer has an **Ask** box.
+
+Speech-to-text uses local faster-whisper when installed, otherwise Gemini (finished sentences only), which covers Python versions where faster-whisper has no build.
+
+`server/wall_detector.py` is an optional Gemini Live wall detector kept as a backup. It is **off** unless `SAW_WALL_DETECTOR=1`.
+
+---
+
 ## Protocol v1
 
 WebSocket paths:

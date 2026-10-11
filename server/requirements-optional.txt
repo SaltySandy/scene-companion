@@ -1,0 +1,7 @@
+# Optional extras. run_server installs each one separately and carries on if one fails.
+# faster-whisper needs ctranslate2, which only ships for 64-bit Python 3.9-3.13.
+faster-whisper==1.2.1
+snowflake-connector-python==3.17.2
+psycopg[binary]==3.2.9
+pytest==8.3.5
+pytest-asyncio==0.25.3

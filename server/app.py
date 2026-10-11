@@ -12,6 +12,14 @@ from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Any
 
+# Load GEMINI_API_KEY etc. from a .env file in the repo root, if present.
+try:
+    from dotenv import load_dotenv
+
+    load_dotenv(Path(__file__).resolve().parent.parent / ".env")
+except ImportError:
+    pass
+
 import sentry_sdk
 from fastapi import FastAPI, Request, WebSocket, WebSocketDisconnect
 from fastapi.responses import HTMLResponse, JSONResponse, PlainTextResponse, Response
@@ -25,6 +33,8 @@ from server.event_sinks import sinks
 from server import ai_hook
 from server.hub import hub, play, say
 from server.transcribe import transcriber
+from server.scene_assistant import assistant
+from server.wall_detector import detector as wall_detector
 
 log = logging.getLogger("saw")
 STATIC_DIR = Path(__file__).resolve().parent / "static"
@@ -102,6 +112,8 @@ async def lifespan(_app: FastAPI):
     transcriber.bind(asyncio.get_running_loop(), _emit_transcript)
     transcriber.start()
     hub.recorder.start()
+    wall_detector.start(speak=say, status=_emit_wall_status)
+    assistant.bind(speak=say, frame=_latest_frame_for_assistant, status=_emit_assistant_status)
     ip = lan_ip()
     port = DEFAULT_PORT
     print()
@@ -113,6 +125,12 @@ async def lifespan(_app: FastAPI):
     print(f"  Viewer : http://{ip}:{port}/")
     print(f"  USB    : adb reverse tcp:{port} tcp:{port}")
     print(f"           then phone host 127.0.0.1:{port}")
+    if wall_detector.enabled:
+        print(f"  Walls  : Gemini Live backup detector ON ({wall_detector.model}). Depth model is primary.")
+    if assistant.enabled:
+        print(f"  Ask    : Gemini ({os.environ.get('SAW_GEMINI_VISION_MODEL', 'gemini-3.5-flash-lite')})"
+              f" + Nimble web search {'ON' if assistant.nimble_enabled else 'OFF (set NIMBLE_API_KEY)'}")
+        print(f"  Voice  : speech-to-text via {transcriber.backend}")
     print(f"  Say    : curl -X POST http://{ip}:{port}/say -H 'content-type: application/json' -d '{{\"text\":\"hello\"}}'")
     if hub.recorder.enabled:
         print(f"  Record : {hub.recorder.path}")
@@ -121,6 +139,7 @@ async def lifespan(_app: FastAPI):
     print("=" * 60)
     print()
     yield
+    await wall_detector.stop()
     transcriber.stop()
     sinks.stop()
     tasks = [t for t in (hub.worker_task, hub.clock_task, hub.fov_task) if t]
@@ -162,6 +181,7 @@ async def health() -> dict[str, object]:
         "lan_ip": lan_ip(),
         "latest_jpeg_bytes": len(hub.last_jpeg) if hub.last_jpeg else 0,
         "fov": ai_hook.fov_params(),
+        "assistant": {"enabled": assistant.enabled, "nimble": assistant.nimble_enabled},
     }
 
 
@@ -186,6 +206,23 @@ async def http_say(request: Request) -> JSONResponse:
         return JSONResponse({"ok": False, "error": "empty text"}, status_code=400)
     await say(text, urgent=urgent)
     return JSONResponse({"ok": True, "text": text.strip(), "urgent": urgent})
+
+
+@app.post("/ask")
+async def http_ask(request: Request) -> JSONResponse:
+    """Ask about the current camera frame, same as speaking a question."""
+    question = ""
+    if "application/json" in request.headers.get("content-type", ""):
+        body = await request.json()
+        if isinstance(body, dict):
+            question = str(body.get("question") or body.get("text") or "")
+    else:
+        question = (await request.body()).decode("utf-8", errors="replace")
+    question = question.strip() or "What is this?"
+    if not assistant.enabled:
+        return JSONResponse({"ok": False, "error": "assistant off (set GEMINI_API_KEY)"}, status_code=400)
+    assistant.ask(question)
+    return JSONResponse({"ok": True, "question": question, "nimble": assistant.nimble_enabled})
 
 
 @app.post("/recall")
@@ -341,6 +378,7 @@ async def _handle_phone_bytes(data: bytes) -> None:
     recv_ms = proto.now_ms()
     if msg.kind == proto.Kind.JPEG_FRAME:
         hub.submit_frame(msg.payload, msg.timestamp_ms, recv_ms)
+        wall_detector.submit(msg.payload, msg.timestamp_ms)
         await hub.broadcast_frame_to_viewers(msg.payload, msg.timestamp_ms, recv_ms)
     elif msg.kind == proto.Kind.MIC_PCM:
         # Enqueue only. Whisper runs on its own thread.
@@ -348,6 +386,21 @@ async def _handle_phone_bytes(data: bytes) -> None:
         await hub._broadcast_viewers_text(
             proto.encode_json(proto.MsgType.MIC, enabled=True, bytes=len(msg.payload), t=msg.timestamp_ms)
         )
+
+
+def _latest_frame_for_assistant() -> tuple[bytes, int] | None:
+    """Newest phone JPEG for "What is this?". Reads hub state on the event loop only."""
+    if hub.last_jpeg is None:
+        return None
+    return hub.last_jpeg, hub.last_jpeg_ts or 0
+
+
+async def _emit_assistant_status(status: dict) -> None:
+    await hub._broadcast_viewers_text(proto.encode_json(proto.MsgType.ASSISTANT, **status))
+
+
+async def _emit_wall_status(status: dict) -> None:
+    await hub._broadcast_viewers_text(proto.encode_json(proto.MsgType.WALL, **status))
 
 
 async def _emit_transcript(text: str, is_final: bool, ts: int) -> None:

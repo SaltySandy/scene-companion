@@ -58,6 +58,8 @@ class MsgType:
     MIC = "mic"
     SPEAKING = "speaking"
     TRANSCRIPT = "transcript"
+    WALL = "wall"  # laptop -> viewer: wall detector status
+    ASSISTANT = "assistant"  # laptop -> viewer: "What is this?" progress
     ERROR = "error"
     PROXIMITY = "proximity"
     ACK = "ack"  # phone -> laptop: {frame_key, cue_start_ts (phone clock), state}

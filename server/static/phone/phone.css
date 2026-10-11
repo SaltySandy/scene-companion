@@ -96,6 +96,16 @@ button:focus-visible, input:focus-visible {
   color: var(--on-accent);
 }
 
+#askWhat {
+  display: block;
+  width: 100%;
+  min-height: 96px;
+  margin-top: 16px;
+  background: var(--field);
+  color: var(--ink);
+  font-size: 1.6rem;
+}
+
 label {
   display: block;
   margin-top: 16px;

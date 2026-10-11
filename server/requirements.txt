@@ -9,3 +9,5 @@ faster-whisper==1.2.1
 snowflake-connector-python==3.17.2
 psycopg[binary]==3.2.9
 pillow>=10
+google-genai
+python-dotenv>=1.0

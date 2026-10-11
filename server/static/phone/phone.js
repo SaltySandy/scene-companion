@@ -707,6 +707,35 @@
     }
   });
 
+  // "What is this?" -> POST /ask on the laptop (Gemini looks at the newest frame,
+  // Nimble adds web facts). The answer comes back as a normal `say`.
+  const askBtn = $("askWhat");
+  function askUrl() {
+    const stream = proto.resolveStreamUrl(wsInput.value, location);
+    return stream.replace(/^ws/i, "http").replace(/\/v1\/stream$/i, "/ask");
+  }
+  if (askBtn) {
+    askBtn.addEventListener("click", async function () {
+      try { await unlockAudio(); } catch (_e) { /* ignore */ }
+      if (!state.running || !state.connected) {
+        speech.enqueueSay("Press Start first.", false);
+        return;
+      }
+      announce("Looking");
+      try {
+        const r = await fetch(askUrl(), {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ question: "What is this?" }),
+        });
+        const j = await r.json();
+        if (!j.ok) speech.enqueueSay("The describe feature is off on the laptop.", false);
+      } catch (_e2) {
+        speech.enqueueSay("Could not reach the laptop.", false);
+      }
+    });
+  }
+
   wsInput.addEventListener("change", persistSettings);
   document.addEventListener("visibilitychange", onVisibility);
   window.addEventListener("pageshow", onVisibility);
