@@ -154,3 +154,89 @@ def test_exitpath_registered_and_explicit_choice_sticks(monkeypatch):
     picked = nav.default_navigator("exitpath")
     assert nav.default_navigator() is picked  # evaluate(navigator=...) no longer falls back to baseline
     nav._default = None
+
+
+# ----------------------------------------------------------------------------- sign-shape filter
+def _canvas(bg=(90, 90, 90)):
+    from PIL import Image
+    return Image.new("RGB", (640, 480), bg)
+
+
+def _draw(img, box, fill, text=None):
+    from PIL import ImageDraw
+    d = ImageDraw.Draw(img)
+    d.rectangle(box, fill=fill)
+    if text:  # light lettering inside the box, like a real EXIT sign
+        x0, y0, x1, y1 = box
+        for k in range(4):
+            cx = x0 + 4 + k * (x1 - x0 - 8) // 4
+            d.rectangle((cx, y0 + 3, cx + 2, y1 - 3), fill=text)
+    return img
+
+
+def test_sign_filter_rejects_red_wall():
+    img = _draw(_canvas(), (60, 30, 600, 420), (230, 30, 25))  # huge red tiled wall (c04-style)
+    assert en.find_exit_sign(img) is None
+    c = [c for c in en.sign_candidates(img) if c["colour"] == "red"]
+    assert c and "size" in c[0]["reasons"]
+
+
+def test_sign_filter_rejects_dim_board_and_speck():
+    img = _canvas()
+    _draw(img, (70, 175, 160, 219), (140, 30, 30))   # dull printed red board (not self-lit)
+    _draw(img, (400, 90, 405, 94), (255, 40, 40))    # tiny red speck
+    assert en.find_exit_sign(img) is None
+
+
+def test_sign_filter_accepts_red_sign_shaped_blob_and_prefers_it_over_larger_blob():
+    img = _canvas()
+    _draw(img, (300, 60, 350, 80), (250, 40, 40), text=(255, 230, 230))  # 2.5:1 lit sign
+    _draw(img, (80, 100, 120, 220), (250, 40, 40))  # bigger but tall/narrow red post
+    s = en.find_exit_sign(img)
+    assert s is not None and s["colour"] == "red"
+    x0, y0, x1, y1 = s["box"]
+    assert 295 <= x0 <= 305 and 345 <= x1 <= 355
+
+
+def test_sign_filter_accepts_green_sign():
+    img = _canvas()
+    _draw(img, (420, 50, 480, 74), (40, 230, 90), text=(235, 255, 235))
+    s = en.find_exit_sign(img)
+    assert s is not None and s["colour"] == "green"
+
+
+def test_sign_filter_rejects_sign_low_in_frame():
+    img = _draw(_canvas(), (300, 420, 350, 440), (250, 40, 40))
+    assert en.find_exit_sign(img) is None
+
+
+# ----------------------------------------------------------------------------- floor-fit fallback
+def _fake_frame(monkeypatch, depth):
+    """Run analyze_frame on a flat grey image with a given raw depth map and a failed floor fit."""
+    import io
+    from PIL import Image
+    from dataclasses import replace
+    monkeypatch.setattr(en, "depth_landscape", lambda *a, **k: depth.astype(np.float32))
+    real_fit = en.fit_floor
+    monkeypatch.setattr(en, "fit_floor", lambda *a, **k: replace(
+        real_fit(*a, **k), n_up=np.array([0.0, -1.0, 0.0]), h=en.CFG["cam_h_m"], scale_source="raw"))
+    buf = io.BytesIO(); Image.new("RGB", (640, 480), (120, 120, 120)).save(buf, "JPEG")
+    return en.analyze_frame(buf.getvalue())
+
+
+def test_floor_fallback_open_view_does_not_stop(monkeypatch):
+    rows = np.linspace(8.0, 1.5, 240)[:, None]  # far at top, near at bottom: deep corridor-like view
+    o = _fake_frame(monkeypatch, np.repeat(rows, 320, axis=1))
+    assert o["floor_unsure"] and not o["nav_fields"]["should_stop"]
+    assert "Not sure of the floor" in o["say"] and "Wall directly ahead" not in o["say"]
+
+
+def test_floor_fallback_close_centre_stops(monkeypatch):
+    d = np.full((240, 320), 6.0); d[30:190, 100:220] = 0.6   # something genuinely close in the centre
+    o = _fake_frame(monkeypatch, d)
+    assert o["floor_unsure"] and o["nav_fields"]["should_stop"] and o["say"].startswith("Stop")
+
+
+def test_floor_fallback_flat_surface_filling_view_stops(monkeypatch):
+    o = _fake_frame(monkeypatch, np.full((240, 320), 2.4))   # one uniform surface (06_plain_wall_close)
+    assert o["floor_unsure"] and o["nav_fields"]["should_stop"]

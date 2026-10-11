@@ -43,6 +43,8 @@ CFG = dict(
     stop_corridor=(0.35, 1.2),  # |x| < 0.35 m, z < 1.2 m occupied -> STOP (about one stride + reaction)
     arrive_m=3.0, arrive_deg=12.0,  # arrive_m chosen after looking at scene 04 (see report)
     bearing_center_deg=10.0,
+    fallback_stop_m=1.2,    # floor fit failed: STOP if raw-depth centre p10 < this
+    flat_view_ratio=1.6,    # ...or if depth p95/p5 < this (one surface fills the view)
 )
 
 
@@ -137,25 +139,75 @@ def _label(mask):
     return lab, ndi.find_objects(lab)
 
 
-def find_exit_sign(img: Image.Image):
-    """Largest red, saturated, bright blob in the top 40% of the frame (640x480 coords)."""
+SIGN = dict(
+    # hue in PIL HSV units (0-255): red wraps around 0, green spans ~85-176 deg (LED/pictogram green)
+    red_h=(12, 235), green_h=(60, 125), min_s=90, min_v=110,
+    v_lit=180,            # mean V of a lit sign (self-luminous); see report for how this was set
+    v_lit_dark=140, dark_contrast=3.0,  # ...or moderately bright but >=3x its surroundings (dark room)
+    aspect=(0.9, 4.5),    # w/h of the coloured blob (letters blur together at 640x480)
+    min_fill=0.45,        # blob fills most of its bounding box (rules out rings, edges, foliage)
+    area_frac=(0.0002, 0.04),  # of the frame: rejects specks and whole walls / boards
+    max_top=0.60,         # sign must start in the top 60% of the frame
+)
+
+
+def sign_candidates(img: Image.Image, cfg=SIGN) -> list[dict[str, Any]]:
+    """Red or green blobs with features + whether they pass the exit-sign shape check."""
     from scipy import ndimage as ndi
     hsv = np.asarray(img.convert("HSV"), np.int16)
     h, s, v = hsv[..., 0], hsv[..., 1], hsv[..., 2]
-    red = ((h < 12) | (h > 235)) & (s > 110) & (v > 110)
-    red = ndi.binary_closing(red, structure=np.ones((3, 9)), iterations=1)
-    lab, objs = _label(red)
-    H = img.height; best = None
-    for i, sl in enumerate(objs, 1):
-        if sl is None:
-            continue
-        area = int((lab[sl] == i).sum())
-        y0, y1, x0, x1 = sl[0].start, sl[0].stop, sl[1].start, sl[1].stop
-        if area < 40 or y0 > 0.40 * H:
-            continue
-        if best is None or area > best[0]:
-            best = (area, (x0, y0, x1, y1))
-    return None if best is None else dict(box=best[1], area=best[0], cropped=best[1][2] >= img.width - 2 or best[1][0] <= 1)
+    L = np.asarray(img.convert("L"), np.float32)
+    H, W = L.shape
+    base = (s > cfg["min_s"]) & (v > cfg["min_v"])
+    masks = {"red": ((h < cfg["red_h"][0]) | (h > cfg["red_h"][1])) & base & (s > 110),
+             "green": (h >= cfg["green_h"][0]) & (h <= cfg["green_h"][1]) & base}
+    out = []
+    for colour, m in masks.items():
+        m = ndi.binary_closing(m, structure=np.ones((3, 9)), iterations=1)
+        lab, objs = _label(m)
+        for i, sl in enumerate(objs, 1):
+            if sl is None:
+                continue
+            mm = lab[sl] == i; area = int(mm.sum())
+            if area < 20:
+                continue
+            y0, y1, x0, x1 = sl[0].start, sl[0].stop, sl[1].start, sl[1].stop
+            w, hh = x1 - x0, y1 - y0
+            vm = float(v[sl][mm].mean())
+            ring = L[max(y0 - hh, 0):min(y1 + hh, H), max(x0 - w // 2, 0):min(x1 + w // 2, W)]
+            contrast = vm / (float(ring.mean()) + 1.0)
+            edge = x0 <= 1 or x1 >= W - 1 or y0 <= 1
+            c = dict(colour=colour, box=(int(x0), int(y0), int(x1), int(y1)), area=area,
+                     area_frac=area / (W * H), aspect=w / hh, fill=area / (w * hh), v=vm, contrast=contrast,
+                     cropped=bool(x0 <= 1 or x1 >= W - 1), reasons=[])
+            r = c["reasons"]
+            if not (cfg["area_frac"][0] <= c["area_frac"] <= cfg["area_frac"][1]):
+                r.append("size")
+            if not (cfg["aspect"][0] <= c["aspect"] <= cfg["aspect"][1]) and not edge:
+                r.append("aspect")
+            if c["fill"] < cfg["min_fill"]:
+                r.append("fill")
+            if not (vm >= cfg["v_lit"] or (vm >= cfg["v_lit_dark"] and contrast >= cfg["dark_contrast"])):
+                r.append("not_lit")
+            if y0 > cfg["max_top"] * H:
+                r.append("too_low")
+            # score: prefer full, bright, ~2.2:1, higher in the frame
+            c["score"] = (c["fill"] + min(vm / 255, 1.0)
+                          + 0.5 * (1 - min(abs(math.log(max(c["aspect"], 1e-3) / 2.2)) / math.log(4), 1))
+                          - 0.5 * (y0 / H))
+            c["ok"] = not r
+            out.append(c)
+    return out
+
+
+def find_exit_sign(img: Image.Image):
+    """Best-scoring red or green blob that passes the exit-sign shape check (640x480 coords)."""
+    ok = [c for c in sign_candidates(img) if c["ok"]]
+    if not ok:
+        return None
+    best = max(ok, key=lambda c: c["score"])
+    return dict(box=best["box"], area=best["area"], colour=best["colour"], score=round(best["score"], 3),
+                cropped=best["cropped"])
 
 
 def _runs(mask):
@@ -238,7 +290,9 @@ def detect_exit(img: Image.Image, depth640: np.ndarray) -> dict[str, Any]:
     y_top = min(sy1 + 6, H - 2)
     slabs, _, _ = find_door_slabs(img, depth640, y_top, min(y_top + int(0.25 * H), H))
     # a slab must contain/touch the sign's x (within 1.5 sign widths)
-    cand = [(a, b, k) for a, b, k in slabs if a - 1.5 * sw <= scx <= b + 1.5 * sw]
+    # the door is directly under the sign: sign centre within the slab (+- half a sign width, capped)
+    tol = min(0.5 * sw, 20)
+    cand = [(a, b, k) for a, b, k in slabs if a - tol <= scx <= b + tol]
     if cand:
         # merge dark/far runs that overlap the sign column
         a = min(c[0] for c in cand); b = max(c[1] for c in cand)
@@ -450,8 +504,20 @@ def analyze_frame(jpeg: bytes, cfg=CFG, depth_mode="tiles") -> dict[str, Any]:
     # wall-filling-view rule: no valid floor fit and almost every image column has an obstacle
     _, _, hgt = ground_points(d, g)
     ob_cols = ((hgt > cfg["obst_h"][0]) & (hgt < cfg["obst_h"][1])).any(0).mean()
-    wall_fill = g0.scale_source == "raw" and ob_cols > 0.95
+    # Floor fit failed -> no trustworthy heights, so the occupancy map is unreliable. Decide from
+    # raw depth only (no camera-height scale exists without a floor): STOP if the centre is
+    # genuinely close, or if one near-uniform surface fills the view (a wall/door right in front);
+    # otherwise say we are unsure instead of inventing a wall.
+    floor_unsure = g0.scale_source == "raw"
+    rh, rw = raw.shape
+    centre = raw[int(0.15 * rh):int(0.75 * rh), int(0.35 * rw):int(0.65 * rw)]
+    centre_clear = float(np.percentile(centre, 10))
+    spread = float(np.percentile(raw, 95) / max(np.percentile(raw, 5), 1e-3))
+    wall_fill = floor_unsure and (centre_clear < cfg["fallback_stop_m"] or spread < cfg["flat_view_ratio"])
+    if floor_unsure:
+        corridor_hit = False  # heights from an invalid plane are meaningless
     out["corridor_hit"] = corridor_hit; out["wall_fill"] = wall_fill
+    out["floor_unsure"] = floor_unsure; out["centre_clear_raw_m"] = centre_clear; out["depth_spread"] = spread
 
     # exit geometry
     e = None
@@ -508,7 +574,7 @@ def compose(o, cfg=CFG):
         bits.append(f"You have reached the exit door. It is straight ahead, about {round_m(e['dist_m'])} meters; walk forward to it.")
         stop = True
     elif o["wall_fill"]:
-        bits.append("Stop. Wall directly ahead, no clear floor in view.")
+        bits.append("Stop. Wall or surface directly ahead, no clear floor in view.")
     else:
         if stop:
             side = "ahead"
@@ -527,12 +593,16 @@ def compose(o, cfg=CFG):
             else:
                 bits.append("No clear path found; stop and scan.")
                 stop = True
+        elif o.get("floor_unsure"):
+            bits.append("Not sure of the floor. Scan slowly.")
+            if ex["sign"] is None:
+                bits.append("Exit is not in view.")
         else:
             bits.append("Exit is not in view. Turn and scan for the exit sign.")
             if ex["door_candidates"]:
                 bits.append("There is a doorway, but no exit sign on it.")
         ahead_objs = [b for b in blobs if b["range"] < 3.0 and abs(math.degrees(math.atan2(b["x"], b["z"]))) < 40]
-        if ahead_objs and not (stop and abs(ahead_objs[0]["x"]) < 0.35):
+        if ahead_objs and not (stop and abs(ahead_objs[0]["x"]) < 0.35) and not o.get("floor_unsure"):
             ob = ahead_objs[0]
             # side relative to the walking path at the obstacle's range
             px = 0.0
