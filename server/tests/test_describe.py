@@ -2,12 +2,12 @@
 
 from __future__ import annotations
 
-import sys
 import types as ty
 
 import pytest
 
 import server.ai_hook as ai_hook
+import server.scene_assistant as sa
 from server.ai import describe, vlm
 from server.ai.describe import DescribeGate, clean
 
@@ -17,10 +17,13 @@ def _reset_describe():
     describe._client = None
     describe._provider = None
     describe._disabled_reason = None
+    previous = sa._client
+    sa._client = None
     yield
     describe._client = None
     describe._provider = None
     describe._disabled_reason = None
+    sa._client = previous
 
 
 def test_gate_center_near_sides_only_danger_and_cooldown() -> None:
@@ -126,12 +129,16 @@ def test_provider_idle_when_neither_key(monkeypatch) -> None:
     assert "idle" in describe.status()
 
 
-def test_saw_vlm_model_overrides_gemini_default(monkeypatch) -> None:
+def test_gemini_model_uses_assistant_vision_model(monkeypatch) -> None:
+    from server.scene_assistant import vision_model
+
     monkeypatch.setenv("GEMINI_API_KEY", "gk")
     monkeypatch.delenv("SAW_VLM_MODEL", raising=False)
+    monkeypatch.delenv("SAW_GEMINI_VISION_MODEL", raising=False)
     assert vlm.model_name() == "gemini-3.5-flash-lite"
-    monkeypatch.setenv("SAW_VLM_MODEL", "gemini-3.8-flash")
+    monkeypatch.setenv("SAW_GEMINI_VISION_MODEL", "gemini-3.8-flash")
     assert vlm.model_name() == "gemini-3.8-flash"
+    assert vlm.model_name() == vision_model()
 
 
 def test_fov_describe_reports_provider(monkeypatch) -> None:
@@ -153,26 +160,66 @@ def test_warmup_uses_gemini_client_from_vlm(monkeypatch) -> None:
     assert describe._provider == "gemini"
 
 
-def test_make_client_prefers_gemini_and_skips_anthropic(monkeypatch) -> None:
-    created: dict[str, str] = {}
+def test_warmup_with_only_gemini_key(monkeypatch) -> None:
+    sentinel = object()
+    monkeypatch.setenv("GEMINI_API_KEY", "gk")
+    monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
+    monkeypatch.delenv("GOOGLE_API_KEY", raising=False)
+    monkeypatch.setattr(sa, "_gemini", lambda: sentinel)
+    describe.warmup()
+    assert describe._client is sentinel
+    assert describe._provider == "gemini"
+    assert describe.status() == "on (gemini)"
+
+
+def test_make_client_reuses_assistant_gemini(monkeypatch) -> None:
+    import server.scene_assistant as sa
+
+    sentinel = object()
+    monkeypatch.setenv("GEMINI_API_KEY", "gk")
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "ak")
+    monkeypatch.setattr(sa, "_gemini", lambda: sentinel)
+    client, provider = vlm.make_client()
+    assert provider == "gemini"
+    assert client is sentinel
+
+
+def test_make_client_and_assistant_share_one_client(monkeypatch) -> None:
+    import google.genai as genai
+    import server.scene_assistant as sa
+
+    created: list[object] = []
 
     class FakeClient:
         def __init__(self, api_key=None):
-            created["key"] = api_key
+            self.api_key = api_key
+            created.append(self)
 
-    google = ty.ModuleType("google")
-    genai_mod = ty.ModuleType("google.genai")
-    genai_mod.Client = FakeClient
-    types_mod = ty.ModuleType("google.genai.types")
-    monkeypatch.setitem(sys.modules, "google", google)
-    monkeypatch.setitem(sys.modules, "google.genai", genai_mod)
-    monkeypatch.setitem(sys.modules, "google.genai.types", types_mod)
     monkeypatch.setenv("GEMINI_API_KEY", "gk")
     monkeypatch.setenv("ANTHROPIC_API_KEY", "ak")
+    monkeypatch.setattr(sa, "_client", None)
+    monkeypatch.setattr(genai, "Client", FakeClient)
     client, provider = vlm.make_client()
     assert provider == "gemini"
-    assert created["key"] == "gk"
-    assert client is not None
+    assert client is sa._gemini()
+    assert len(created) == 1
+    assert created[0].api_key == "gk"
+
+
+def test_make_client_without_key_does_not_build_gemini(monkeypatch) -> None:
+    import server.scene_assistant as sa
+
+    monkeypatch.delenv("GEMINI_API_KEY", raising=False)
+    monkeypatch.delenv("GOOGLE_API_KEY", raising=False)
+    monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
+
+    def boom():
+        raise AssertionError("must not build a Gemini client without a key")
+
+    monkeypatch.setattr(sa, "_gemini", boom)
+    client, provider = vlm.make_client()
+    assert client is None
+    assert provider is None
 
 
 class _FakeGeminiClient:
@@ -219,7 +266,7 @@ async def test_ask_json_async_dispatches_to_gemini(monkeypatch) -> None:
 
 async def test_ask_gemini_calls_generate_content(monkeypatch) -> None:
     pytest.importorskip("google.genai")
-    monkeypatch.setenv("SAW_VLM_MODEL", "gemini-3.5-flash-lite")
+    monkeypatch.setenv("SAW_GEMINI_VISION_MODEL", "gemini-3.5-flash-lite")
     client = _FakeGeminiClient('{"label": "glass wall"}')
     answer = await vlm._ask_gemini(client, b"\xff\xd8\xff\xd9", "name it", describe.SCHEMA)
     assert answer == {"label": "glass wall"}

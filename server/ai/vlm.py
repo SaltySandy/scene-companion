@@ -2,8 +2,11 @@
 
 Prefers Google Gemini when GEMINI_API_KEY (or GOOGLE_API_KEY) is set, and
 falls back to Claude when only ANTHROPIC_API_KEY is set (or an `ant auth
-login` profile is used for pre-labeling). Set SAW_VLM_MODEL to override the
-default model for the active provider.
+login` profile is used for pre-labeling).
+
+Gemini uses the same client and model as ``server.scene_assistant``
+(``GEMINI_API_KEY`` / ``SAW_GEMINI_VISION_MODEL``). Set ``SAW_VLM_MODEL`` to
+override the Claude model used for pre-labeling.
 """
 
 from __future__ import annotations
@@ -16,7 +19,6 @@ from typing import Any
 
 log = logging.getLogger("saw.vlm")
 
-DEFAULT_GEMINI_MODEL = "gemini-3.5-flash-lite"
 DEFAULT_CLAUDE_MODEL = "claude-opus-5-5"
 FALLBACK_BETA = "server-side-fallback-2026-07-01"
 
@@ -39,26 +41,27 @@ def active_provider() -> str | None:
 
 
 def model_name(provider: str | None = None) -> str:
-    override = (os.environ.get("SAW_VLM_MODEL") or "").strip()
-    if override:
-        return override
     which = provider or active_provider()
     if which == "gemini":
-        return DEFAULT_GEMINI_MODEL
-    return DEFAULT_CLAUDE_MODEL
+        from server.scene_assistant import vision_model
+
+        return vision_model()
+    override = (os.environ.get("SAW_VLM_MODEL") or "").strip()
+    return override or DEFAULT_CLAUDE_MODEL
 
 
 def make_client(provider: str | None = None) -> tuple[Any, str | None]:
-    """Build the async/sync-capable client for the chosen provider.
+    """Return the client for the chosen provider.
 
-    Blocking: import the SDK here (startup thread), not on the event loop.
+    Gemini reuses ``scene_assistant._gemini()`` so voice Q&A and obstacle
+    names share one ``google.genai.Client``. Blocking: call from a worker
+    thread (warmup), not the event loop.
     """
     which = provider or active_provider()
     if which == "gemini":
-        from google import genai
-        from google.genai import types  # noqa: F401 — cache for the first describe()
+        from server.scene_assistant import _gemini
 
-        return genai.Client(api_key=gemini_key()), "gemini"
+        return _gemini(), "gemini"
     if which == "anthropic":
         import anthropic
 

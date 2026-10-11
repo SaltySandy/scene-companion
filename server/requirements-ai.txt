@@ -5,4 +5,3 @@ numpy>=1.24,<2
 pillow>=10
 anthropic>=1.13
 google-genai
-python-dotenv>=1.0

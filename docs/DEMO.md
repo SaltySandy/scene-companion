@@ -35,7 +35,8 @@ Laptop:
 ./run_server.sh                     # installs server + AI requirements, starts on :8765
 pip install -r scripts/requirements-export.txt
 python scripts/export_depth_onnx.py # writes models/da2-metric-indoor-s-350x266.onnx (~100 MB)
-export ANTHROPIC_API_KEY=...        # optional: obstacle names and pre-labeling
+export GEMINI_API_KEY=...           # obstacle names + "What is this?" (already on the laptop)
+# export ANTHROPIC_API_KEY=...      # optional: pre-labeling / describe fallback
 ```
 
 Phone: build and install the APK from a machine with JDK 17 and the Android SDK
@@ -89,7 +90,7 @@ and people. Spot-check labels in `labels.jsonl` before trusting a threshold.
 | Clock sync / camera-to-cue WARN | Phone runs an old APK; reinstall the current build |
 | Constant "near" in open space | Open the viewer's depth view. Magenta on bare floor: raise `SAW_FLOOR_MARGIN` to 0.3, or `SAW_FLOOR=0` for band only. Floor inside the yellow band: tilt the phone up a little |
 | Chair not detected | Tilt the phone down a little more; the depth view should show the floor inside the cyan box and the chair in magenta. Caption "no floor in view" means the fit failed |
-| No obstacle names | Set `ANTHROPIC_API_KEY`; the server log says "describe disabled" |
+| No obstacle names | Set `GEMINI_API_KEY`; the server log says "describe disabled" |
 
 ## Settings (env vars on the server)
 
@@ -105,4 +106,4 @@ and people. Spot-check labels in `labels.jsonl` before trusting a threshold.
 | `SAW_STALE_MS` | 700 | Older frames are sent as unknown |
 | `SAW_RECORD` / `SAW_RECORD_JPEG` | off / on | Record `sessions/<id>/` |
 | `SAW_PROXIMITY` | 1 | 0 turns the sensor off (for `/debug/proximity` tests) |
-| `SAW_DESCRIBE` / `SAW_VLM_MODEL` | 1 / claude-opus-5-5 | Spoken obstacle names |
+| `SAW_DESCRIBE` / `SAW_GEMINI_VISION_MODEL` | 1 / gemini-3.5-flash-lite | Spoken obstacle names (same Gemini client as "What is this?") |

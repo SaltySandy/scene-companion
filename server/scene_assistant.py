@@ -22,7 +22,7 @@ search query, same as typed "What is this?".
 
 Environment variables
 ---------------------
-GEMINI_API_KEY              required (shared with the wall detector)
+GEMINI_API_KEY              required (shared with obstacle describe and the wall detector)
 NIMBLE_API_KEY              optional; without it you get step 2 only
 SAW_GEMINI_VISION_MODEL     default ``gemini-3.5-flash-lite`` (fast). ``gemini-3.8-flash`` is smarter.
 SAW_NIMBLE_MAX_RESULTS      default 5
@@ -116,8 +116,9 @@ def _gemini():
     global _client
     if _client is None:
         from google import genai
+        from server.ai.vlm import gemini_key
 
-        _client = genai.Client(api_key=os.environ.get("GEMINI_API_KEY") or os.environ.get("GOOGLE_API_KEY"))
+        _client = genai.Client(api_key=gemini_key())
     return _client
 
 
@@ -221,7 +222,9 @@ def _env_float(name: str, default: float) -> float:
 
 class SceneAssistant:
     def __init__(self) -> None:
-        has_key = bool(os.environ.get("GEMINI_API_KEY") or os.environ.get("GOOGLE_API_KEY"))
+        from server.ai.vlm import gemini_key
+
+        has_key = bool(gemini_key())
         self.enabled = has_key and os.environ.get("SAW_ASSISTANT", "1").strip().lower() not in {"0", "false", "off", "no"}
         self.nimble_enabled = bool(os.environ.get("NIMBLE_API_KEY", "").strip())
         self.timeout_s = _env_float("SAW_DESCRIBE_TIMEOUT_S", DEFAULT_TIMEOUT_S)

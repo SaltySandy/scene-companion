@@ -5,9 +5,10 @@ ahead") when something new comes close. It never blocks the heartbeat: the
 call runs as a background task, at most one at a time with a cooldown, and an
 answer that arrives late or after the sector cleared is dropped.
 
-Prefers GEMINI_API_KEY; falls back to ANTHROPIC_API_KEY. Client construction
+Prefers GEMINI_API_KEY (same client and SAW_GEMINI_VISION_MODEL as
+scene_assistant); falls back to ANTHROPIC_API_KEY. Client construction
 happens in warmup() on a worker thread so the first obstacle does not stall
-the event loop.
+the event loop. Without a key, describe() no-ops and disables itself.
 """
 
 from __future__ import annotations
