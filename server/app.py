@@ -12,7 +12,7 @@ from pathlib import Path
 
 import sentry_sdk
 from fastapi import FastAPI, Request, WebSocket, WebSocketDisconnect
-from fastapi.responses import HTMLResponse, JSONResponse, PlainTextResponse
+from fastapi.responses import HTMLResponse, JSONResponse, PlainTextResponse, Response
 from fastapi.staticfiles import StaticFiles
 from sentry_sdk.integrations.asyncio import AsyncioIntegration
 from sentry_sdk.integrations.fastapi import FastApiIntegration
@@ -113,7 +113,7 @@ async def lifespan(_app: FastAPI):
     yield
     transcriber.stop()
     sinks.stop()
-    tasks = [t for t in (hub.worker_task, hub.clock_task) if t]
+    tasks = [t for t in (hub.worker_task, hub.clock_task, hub.fov_task) if t]
     for task in tasks:
         task.cancel()
     await asyncio.gather(*tasks, return_exceptions=True)
@@ -150,6 +150,8 @@ async def health() -> dict[str, object]:
         "clock_rtt_ms": hub.clock.rtt_ms,
         "last_cue_latency_ms": hub.last_cue_latency_ms,
         "lan_ip": lan_ip(),
+        "latest_jpeg_bytes": len(hub.last_jpeg) if hub.last_jpeg else 0,
+        "fov": ai_hook.fov_params(),
     }
 
 
@@ -250,8 +252,10 @@ async def viewer_stream(ws: WebSocket) -> None:
             proto=proto.PROTO_VERSION,
             role="viewer",
             phone_connected=hub.phone is not None,
+            fov=ai_hook.fov_params(),
         )
     )
+    await hub.send_snapshot_to_viewer(ws)
     try:
         while True:
             message = await ws.receive()
@@ -299,6 +303,7 @@ async def _handle_phone_text(_ws: WebSocket, text: str) -> None:
     elif kind == proto.MsgType.HELLO:
         log.info("phone hello: %s", obj)
     elif kind == proto.MsgType.CONFIG:
+        hub.phone_config = {k: obj[k] for k in obj if k not in {"v", "type"}}
         log.info("phone config: %s", obj)
     elif kind == proto.MsgType.SPEAKING:
         transcriber.set_phone_speaking(bool(obj.get("active", False)))
@@ -368,6 +373,41 @@ async def debug_sentry() -> JSONResponse:
         event_id = sentry_sdk.capture_exception()
         sentry_sdk.flush(timeout=2.0)
     return JSONResponse({"ok": True, "event_id": str(event_id) if event_id else None})
+
+
+@app.get("/latest.jpg")
+async def latest_jpeg() -> Response:
+    """Last phone JPEG. Lets the viewer page show a frame even if the WS never opens."""
+    if not hub.last_jpeg:
+        return Response(status_code=404, headers={"Cache-Control": "no-store"})
+    return Response(
+        content=hub.last_jpeg,
+        media_type="image/jpeg",
+        headers={"Cache-Control": "no-store", "X-Capture-Ts": str(hub.last_jpeg_ts or "")},
+    )
+
+
+@app.get("/fov.jpg")
+async def fov_jpeg() -> Response:
+    if not hub.last_fov_jpeg:
+        return Response(status_code=404, headers={"Cache-Control": "no-store"})
+    return Response(
+        content=hub.last_fov_jpeg,
+        media_type="image/jpeg",
+        headers={"Cache-Control": "no-store", "X-Fov-Seq": str(hub.fov_seq)},
+    )
+
+
+@app.get("/fov.json")
+async def fov_json() -> JSONResponse:
+    from server.ai_hook import fov_params
+
+    meta = dict(hub.last_fov_meta or fov_params())
+    meta["seq"] = hub.fov_seq
+    meta["has_jpeg"] = hub.last_fov_jpeg is not None
+    if hub.phone_config:
+        meta["phone"] = hub.phone_config
+    return JSONResponse(meta, headers={"Cache-Control": "no-store"})
 
 
 @app.get("/lan")

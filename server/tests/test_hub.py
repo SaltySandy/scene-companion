@@ -41,6 +41,15 @@ def test_take_empties_slot_and_resets_per_take_count() -> None:
     assert hub.frames_dropped == 1  # lifetime total is kept
 
 
+def test_last_jpeg_survives_take() -> None:
+    """Viewers and /latest.jpg need the frame after the worker empties the slot."""
+    hub = Hub()
+    hub.submit_frame(b"jpeg-bytes", capture_ts=1000, recv_ts=1040)
+    assert hub.take_latest() is not None
+    assert hub.last_jpeg == b"jpeg-bytes"
+    assert hub.last_jpeg_ts == 1000
+
+
 def test_recv_ts_defaults_to_laptop_clock() -> None:
     hub = Hub()
     before = proto.now_ms()
